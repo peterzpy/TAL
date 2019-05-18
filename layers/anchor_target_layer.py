@@ -38,8 +38,8 @@ def anchor_target_layer(gt_boxes, im_info, all_anchors):
     allow_border = 0
     total_anchor = all_anchors.shape[0]
     anchors = torch.zeros_like(all_anchors)
-    anchors[:, 0] = torch.floor(all_anchors[:, 0] - all_anchors[:, 1] / 2)
-    anchors[:, 1] = torch.ceil(all_anchors[:, 0] + all_anchors[:, 1] / 2)
+    anchors[:, 0] = all_anchors[:, 0] - all_anchors[:, 1] / 2
+    anchors[:, 1] = all_anchors[:, 0] + all_anchors[:, 1] / 2
     indx = torch.nonzero((anchors[:, 0] >= -allow_border) & (anchors[:, 1] <= im_info + allow_border) & (anchors[:, 0] < anchors[:, 1])).reshape(-1)
     label = torch.ones(len(indx), ).cuda() * -1  #[N, 1]
     anchors = anchors[indx, :]
@@ -90,10 +90,10 @@ def compute_target(rois, gt_boxes):
     new_rois = torch.zeros_like(rois)
     new_gt = torch.zeros_like(gt_boxes)
     bbox_offset = torch.zeros_like(rois)
-    new_rois[:, 0] = (rois[:, 0] + rois[:, 1]) // 2
-    new_rois[:, 1] = rois[:, 1] - rois[:, 0]
-    new_gt[:, 0] = (gt_boxes[:, 0] + gt_boxes[:, 1]) // 2
-    new_gt[:, 1] = gt_boxes[:, 1] - gt_boxes[:, 0]
+    new_rois[:, 0] = (rois[:, 0] + rois[:, 1]) / 2
+    new_rois[:, 1] = rois[:, 1] - rois[:, 0] + 1
+    new_gt[:, 0] = (gt_boxes[:, 0] + gt_boxes[:, 1]) / 2
+    new_gt[:, 1] = gt_boxes[:, 1] - gt_boxes[:, 0] + 1
     bbox_offset[:, 0] = (new_gt[:, 0] - new_rois[:, 0]) / new_rois[:, 1]
     bbox_offset[:, 1] =  torch.log(new_gt[:, 1] / new_rois[:, 1])
     

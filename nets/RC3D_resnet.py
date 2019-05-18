@@ -15,6 +15,7 @@ from utils.utils import proposal_nms
 from layers.anchor_target_layer import anchor_target_layer
 from layers.object_target_layer import object_target_layer
 from layers.generate_anchor import generate_anchors
+from nets.Relation import Relation, extract_position_embedding, extract_position_matrix
 
 class Conv1d(nn.Module):
     
@@ -84,6 +85,7 @@ class RC3D(nn.Module):
         self.bbox_offset = nn.Linear(256, 2)
         self.segment_proposal = SegmentProposal()
         self.backbone = resnet.I3Res50(num_classes=self.num_classes)
+        self.relation = Relation()
 
     def _cls_prob(self, inputs):
         inputs_reshaped = self._reshape(inputs)
@@ -104,7 +106,7 @@ class RC3D(nn.Module):
         feature = feature.transpose(1, 2)
         x = self.conv1(feature)
         cls_score, proposal_offset = self.segment_proposal(x)
-        self.anchors = torch.tensor(generate_anchors(x.size()[-1], 16, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
+        self.anchors = torch.tensor(generate_anchors(x.size()[-1], 8, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
         cls_prob = self._cls_prob(cls_score).reshape(-1, 2)
         proposal_offset_reshaped = self._reshape(proposal_offset).reshape(-1, 2)
         proposal_idx, proposal_bbox = proposal_nms(self.anchors, cls_prob, proposal_offset_reshaped)
@@ -112,8 +114,8 @@ class RC3D(nn.Module):
         #proposal_prob = cls_prob[proposal_idx]
         new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
         new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
-        new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / 16), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
-        new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / 16), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
+        new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / 8), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
+        new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / 8), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
         self.proposal_bbox = proposal_bbox
         for i in range(new_proposal.size()[0]):
             #if new_proposal[i, 0] > new_proposal[i, 1]:
@@ -126,7 +128,14 @@ class RC3D(nn.Module):
                 #spp_feature = torch.cat((spp_feature, self.soipooling(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1]])), 0)
         x = self.conv2(spp_feature)
         x = x.view(x.size()[0], -1)
-        x = self.relu(self.fc1(x))
+        x = self.fc1(x)
+        #这里的nongt_dim 可以选取别的值
+        #TODO 选择映射后的且扩大感受野的ROI区域
+        nongt_dim = x.shape[0]
+        position_matrix = extract_position_matrix(new_proposal, nongt_dim)
+        position_embedding = extract_position_embedding(position_matrix, cfg.Train.embedding_feat_dim)
+        attention = self.relation.forward(x, position_embedding, nongt_dim)
+        x = self.relu(x + attention)
         object_cls_score = self.cls(x)
         object_offset = self.bbox_offset(x)
         cls_score = self._reshape(cls_score).reshape(-1, 2)
@@ -171,7 +180,7 @@ class RC3D(nn.Module):
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()
-        return loss1 + cfg.Train.regularization * loss2 + loss3 + cfg.Train.regularization * loss4, loss1, loss2, loss3, loss4
+        return loss1 + cfg.Train.regularization * loss2 + cfg.Train.cls_regularization * loss3 + cfg.Train.regularization * loss4, loss1, loss2, loss3, loss4
 
     def load(self, path, ltype=1):
         '''

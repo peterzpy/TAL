@@ -41,8 +41,8 @@ def test():
 def object_target_layer(gt_boxes, im_info, proposal_bbox):
     total_bbox = proposal_bbox.shape[0]
     new_proposal = torch.empty_like(proposal_bbox)
-    new_proposal[:, 0] = torch.floor(proposal_bbox[:, 0] - proposal_bbox[:, 1] / 2)
-    new_proposal[:, 1] = torch.ceil(proposal_bbox[:, 0] + proposal_bbox[:, 1] / 2)
+    new_proposal[:, 0] = proposal_bbox[:, 0] - proposal_bbox[:, 1] / 2
+    new_proposal[:, 1] = proposal_bbox[:, 0] + proposal_bbox[:, 1] / 2
     allow_border = 0
     indx = torch.nonzero((new_proposal[:, 0] >= allow_border) & (new_proposal[:, 1] <= im_info + allow_border) & (new_proposal[:, 0] < new_proposal[:, 1])).reshape(-1)
     label = torch.zeros(len(indx), 1).cuda()
@@ -78,10 +78,10 @@ def compute_target(rois, gt_boxes):
     new_rois = torch.zeros_like(rois)
     new_gt = torch.zeros_like(gt_boxes)
     bbox_offset = torch.zeros_like(rois)
-    new_rois[:, 0] = (rois[:, 0] + rois[:, 1]) // 2
-    new_rois[:, 1] = rois[:, 1] - rois[:, 0]
-    new_gt[:, 0] = (gt_boxes[:, 0] + gt_boxes[:, 1]) // 2
-    new_gt[:, 1] = gt_boxes[:, 1] - gt_boxes[:, 0]
+    new_rois[:, 0] = (rois[:, 0] + rois[:, 1]) / 2
+    new_rois[:, 1] = rois[:, 1] - rois[:, 0] + 1
+    new_gt[:, 0] = (gt_boxes[:, 0] + gt_boxes[:, 1]) / 2
+    new_gt[:, 1] = gt_boxes[:, 1] - gt_boxes[:, 0] + 1
     bbox_offset[:, 0] = (new_gt[:, 0] - new_rois[:, 0]) / new_rois[:, 1]
     bbox_offset[:, 1] =  torch.log(new_gt[:, 1] / new_rois[:, 1])
     

@@ -16,8 +16,8 @@ def proposal_nms(anchors, cls_prob, proposal_offset):
     refined_proposal[:, 0] = proposal_offset[:, 0] * anchors[:, 1] + anchors[:, 0]
     refined_proposal[:, 1] = anchors[:, 1] * torch.exp(proposal_offset[:, 1])
     new_proposal = torch.empty_like(anchors)
-    new_proposal[:, 0] = refined_proposal[:, 0] - refined_proposal[:, 1] // 2
-    new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 1] // 2
+    new_proposal[:, 0] = refined_proposal[:, 0] - refined_proposal[:, 1] / 2
+    new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 1] / 2
     _, sort_index = torch.sort(cls_prob[:, 0], dim = 0, descending = True)
     if cls_prob.size()[0] > cfg.Train.rpn_pre_nms:
         sort_index = sort_index[:cfg.Train.rpn_pre_nms]
@@ -63,12 +63,16 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
         for j in range(0, len(temp_idx)):
             if label[j] == 0:
                 continue
+            if prob[j] < cfg.Test.score_threshold:
+                continue
             object_bbox['cls'].append(i)
             object_bbox['score'].append(prob[j])
             object_bbox['bbox'].append(temp_proposal[j, :])
             for k in range(j+1, len(temp_idx)):
                 if overlaps[j, k] >= cfg.Train.nms_threshold:
                     label[k] = 0
+    if object_bbox['cls'] == []:
+        pdb.set_trace()
     return object_bbox
 
 def bbox_overlap(boxes1, boxes2):
@@ -143,7 +147,7 @@ def preprocess(video_path, image_path, video_annotation_path, annotation_path):
                         break
                     total += 1
                     cur_name = temp_name + "_" + "{:06d}".format(total)
-                    if annotation_action[index][1]*cfg.Process.Frame < (counter + cfg.Process.dilation * cfg.Process.length):
+                    if (annotation_action[index][1] + annotation_action[index][2])/2*cfg.Process.Frame < (counter + cfg.Process.dilation * cfg.Process.length):
                         os.mkdir(cur_name)
                         fw = open(os.path.join(annotation_path, video_name.split('.')[0] + "_{:06d}".format(total) + ".txt"), 'w')
                         while(index <= index_max):
@@ -183,11 +187,11 @@ def preprocess(video_path, image_path, video_annotation_path, annotation_path):
                     total += 1
                     cur_name = temp_name + "_" + "{:06d}".format(total)
                     #可能会有在最前面半段的标注，需要跳过
-                    while annotation_action[index][2]*cfg.Process.Frame < base + counter and index <= index_max:
+                    while (annotation_action[index][1] + annotation_action[index][2])/2*cfg.Process.Frame < base + counter and index <= index_max:
                         index += 1
                     if index > index_max:
                         break
-                    if annotation_action[index][1]*cfg.Process.Frame < (base + counter + cfg.Process.dilation * cfg.Process.length):
+                    if (annotation_action[index][1] + annotation_action[index][2])/2*cfg.Process.Frame < (base + counter + cfg.Process.dilation * cfg.Process.length):
                         os.mkdir(cur_name)
                         fw = open(os.path.join(annotation_path, video_name.split('.')[0] + "_{:06d}".format(total) + ".txt"), 'w')
                         while(index <= index_max):
