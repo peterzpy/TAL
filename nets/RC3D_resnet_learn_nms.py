@@ -200,9 +200,10 @@ class RC3D(nn.Module):
         cls_prob_nonbg = cls_obj_prob[:, 1:]
         sorted_score, sort_idx = torch.sort(cls_prob_nonbg, 0)
         refined_proposal = torch.empty_like(object_offset)
-        refined_proposal[:, :, 0] = proposal_bbox[:, 1] * object_offset[:, :, 0] + proposal_bbox[:, 0]
-        refined_proposal[:, :, 1] = torch.exp(object_offset[:, :, 1]) * proposal_bbox[:, 1]
-        refined_proposal = refined_proposal.transpose(2, 3)
+        proposal_bbox = proposal_bbox.reshape(proposal_bbox.shape[0], 1, proposal_bbox.shape[1])
+        refined_proposal[:, :, 0] = proposal_bbox[:, :, 1] * object_offset[:, :, 0] + proposal_bbox[:, :, 0]
+        refined_proposal[:, :, 1] = torch.exp(object_offset[:, :, 1]) * proposal_bbox[:, :, 1]
+        refined_proposal = refined_proposal.transpose(1, 2)
         #[N, num_fg, 2, num_fg]
         sorted_bbox = refined_proposal[sort_idx]
         cls_mask = torch.arange(self.num_classes - 1).cuda()
@@ -216,7 +217,7 @@ class RC3D(nn.Module):
         perm_idx = torch.cat((perm_idx3, perm_idx2, perm_idx1), -1)
         temp_idx = subscript_index(cls_mask, perm_idx).reshape(-1, 1)
         #[N, num_fg, 2]
-        sorted_bbox = subscript_index(sorted_bbox, torch.cat((perm_idx, temp_idx), -1))
+        sorted_bbox = subscript_index(sorted_bbox, torch.cat((perm_idx, temp_idx), -1)).reshape(cls_mask.shape)
         nms_rank_embedding = extract_rank_embedding(cls_score.shape[0], 256)
         nms_rank_feat = self.fc1_nms(nms_rank_embedding)
         #[num_fg, N, N, 2]
@@ -238,7 +239,6 @@ class RC3D(nn.Module):
         #pdb.set_trace()
         return cls_score, proposal_offset, object_cls_score, object_offset, nms_score
 
-#TODO 添加nms loss
     def get_loss(self, cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes):#gt_boxes [N, 3] (idx, start, end) idx中类别也是从1开始
         #pdb.set_trace()
         rpn_label, rpn_bbox_offset = anchor_target_layer(gt_boxes[:, 1:], self.im_info, self.anchors_new)
@@ -272,14 +272,15 @@ class RC3D(nn.Module):
         loss3 = creterion(object_cls_score[e_index2], object_label[e_index2].long())
         #object_bbox_loss
         object_offset = object_offset.reshape(-1, 2)
-        e_index4 = e_index3 * (self.num_classes - 1) + object_label[e_index3] - 1
+        e_index4 = e_index3 * (self.num_classes - 1) + object_label[e_index3].long() - 1
         loss4 = nn.SmoothL1Loss(reduction = 'mean')(object_offset[e_index4], object_bbox_offset[e_index3])
         #nms_loss
         nms_target = nms_multi_target(self.sorted_bbox, gt_boxes, self.sorted_score, cfg.Network.nms_threshold)
-        positive_num = (nms_target == 1).sum()
-        negative_num = (nms_target == 0).sum()
-        nms_weight = torch.tensor([(positive_num + negative_num)/negative_num, (positive_num + negative_num)/positive_num]).float()
-        loss5 = nn.BCELoss(weight = nms_weight)(nms_score + cfg.Train.nms_eps, nms_target)
+        #positive_num = (nms_target == 1).sum()
+        #negative_num = (nms_target == 0).sum()
+        nms_pos_loss = - torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target)
+        nms_neg_loss = - torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target)
+        loss5 = (nms_pos_loss + nms_neg_loss).reshape(-1).mean()
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()

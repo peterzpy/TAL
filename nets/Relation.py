@@ -38,8 +38,8 @@ def extract_multi_position_matrix(bbox):
         position_matrix [num_fg, N, N, 2]
     '''
     bbox = bbox.transpose(0, 1)
-    center = bbox[:, :, 0:].float()
-    length = bbox[:, :, 1:].float()
+    center = bbox[:, :, 0:1].float()
+    length = bbox[:, :, 1:2].float()
     center_new = center.transpose(1, 2)
     length_new = length.transpose(1, 2)
     delta_center = center - center_new
@@ -210,13 +210,13 @@ class NMSRelation(nn.Module):
         #[num_fg, N, dim[0]]
         q_data = self.fc2(roi_feat)
         #[num_fg, N, group, dim[0] / group]
-        q_data_batch = q_data.reshape(q_data.shape[0], q_data.shape[1], self.group, dim_group[0])
+        q_data_batch = q_data.reshape(q_data.shape[0], q_data.shape[1], self.group, int(dim_group[0]))
         #[num_fg, group, N, dim[0] / group]
         q_data_batch = q_data_batch.transpose(1, 2)
         #[num_fg * group, N, dim[0] / group]
         q_data_batch = q_data_batch.reshape(-1, q_data_batch.shape[2], q_data_batch.shape[-1])
         k_data = self.fc3(roi_feat)
-        k_data_batch = k_data.reshape(k_data.shape[0], k_data.shape[1], self.group, dim_group[1])
+        k_data_batch = k_data.reshape(k_data.shape[0], k_data.shape[1], self.group, int(dim_group[1]))
         k_data_batch = k_data_batch.transpose(1, 2)
         #[num_fg * group, N, dim[1] / group]
         k_data_batch = k_data_batch.reshape(-1, k_data_batch.shape[2], k_data_batch.shape[-1])
@@ -227,7 +227,7 @@ class NMSRelation(nn.Module):
         #[num_fg * fc_dim[1], N, N]
         aff_weight_reshaped = aff_weight.reshape(-1, num_rois, num_rois)
         #[num_fg * group, N, N]
-        weighted_aff = torch.log(torch.max(aff_weight_reshaped, torch.ones_like(aff_weight) * 1e-6)) + aff_scale
+        weighted_aff = torch.log(torch.max(aff_weight_reshaped, torch.ones_like(aff_weight_reshaped) * 1e-6)) + aff_scale
         aff_softmax = nn.Softmax(-1)(weighted_aff)
         aff_softmax_reshaped = aff_softmax.reshape(-1, self.group * num_rois, num_rois)
         #[num_fg, fc_dim[1] * N, feat_dim]
