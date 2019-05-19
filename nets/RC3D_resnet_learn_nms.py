@@ -15,7 +15,54 @@ from utils.utils import proposal_nms
 from layers.anchor_target_layer import anchor_target_layer
 from layers.object_target_layer import object_target_layer
 from layers.generate_anchor import generate_anchors
-from nets.Relation import Relation, extract_position_embedding, extract_position_matrix
+from layers.nms_multi_target import nms_multi_target
+from nets.Relation import Relation, extract_position_embedding, extract_position_matrix, extract_rank_embedding, extract_multi_position_matrix, NMSRelation
+
+def subscript_index(arr, idx):
+    '''
+    @params
+        arr 任意维度
+        idx 逐下标的索引
+    @outputs
+        result 针对下标对应的返回值
+    
+    examples:
+        >>> x = torch.randn(2, 2, 2, 3)
+            x = [[[[ 0.6956, -0.8183, -1.4719],
+                   [ 0.2080,  0.6601,  0.5879]],
+
+                   [[ 1.1300,  0.6284, -0.7488],
+                   [-1.7741, -0.3267,  1.6636]]],
+
+                   [[[ 0.0633,  0.1632,  0.2690],
+                   [ 1.8097,  0.4601,  0.4023]],
+
+                   [[-0.8845, -0.0035,  0.3874],
+                   [-0.9179,  0.7707,  2.2981]]]]
+
+        >>> y = torch.randint(3, (5, 3))
+            y = [[1, 1, 1],
+                 [1, 1, 1],
+                 [1, 1, 1],
+                 [1, 0, 0],
+                 [1, 0, 0]]
+        >>> result = subscript_index(x, y)
+            result = [[-0.9179,  0.7707,  2.2981],
+                      [-0.9179,  0.7707,  2.2981],
+                      [-0.9179,  0.7707,  2.2981],
+                      [ 0.0633,  0.1632,  0.2690],
+                      [ 0.0633,  0.1632,  0.2690]]
+    '''
+
+    assert torch.is_tensor(arr), "arr must be tensor"
+    assert torch.is_tensor(idx), "idx must be tensor"
+    num = idx.shape[0]
+    size = idx.shape[1]
+    assert size <= len(arr.shape), "idx don't match the arr"
+    result = arr[idx.chunk(num, -1)]
+    result = result.reshape((num, ) + arr.shape[size:])
+
+    return result
 
 class Conv1d(nn.Module):
     
@@ -85,7 +132,11 @@ class RC3D(nn.Module):
         self.bbox_offset = nn.Linear(256, 2 * (self.num_classes - 1))
         self.segment_proposal = SegmentProposal()
         self.backbone = resnet.I3Res50(num_classes=self.num_classes)
+        self.fc1_nms = nn.Linear(256, 128)
+        self.fc2_nms = nn.Linear(256, 128)
+        self.fc3_nms = nn.Linear(128, len(cfg.Network.nms_threshold))
         self.relation = Relation()
+        self.nms_relation = NMSRelation()
 
     def _cls_prob(self, inputs):
         inputs_reshaped = self._reshape(inputs)
@@ -130,7 +181,7 @@ class RC3D(nn.Module):
         x = x.view(x.size()[0], -1)
         x = self.fc1(x)
         #这里的nongt_dim 可以选取别的值
-        #TODO 选择映射后的且扩大感受野的ROI区域
+        #TODO选择映射后的且扩大感受野的ROI区域
         nongt_dim = x.shape[0]
         position_matrix = extract_position_matrix(new_proposal, nongt_dim)
         position_embedding = extract_position_embedding(position_matrix, cfg.Train.embedding_feat_dim)
@@ -142,10 +193,53 @@ class RC3D(nn.Module):
         cls_score = self._reshape(cls_score).reshape(-1, 2)
         cls_score = cls_score[proposal_idx]
         self.anchors_new = self.anchors[proposal_idx]
+        #----------------------------------------------------
+        #       duplicate removal 模块
+        #----------------------------------------------------
+        cls_obj_prob = nn.Softmax(-1)(object_cls_score)
+        cls_prob_nonbg = cls_obj_prob[:, 1:]
+        sorted_score, sort_idx = torch.sort(cls_prob_nonbg, 0)
+        refined_proposal = torch.empty_like(object_offset)
+        refined_proposal[:, :, 0] = proposal_bbox[:, 1] * object_offset[:, :, 0] + proposal_bbox[:, 0]
+        refined_proposal[:, :, 1] = torch.exp(object_offset[:, :, 1]) * proposal_bbox[:, 1]
+        refined_proposal = refined_proposal.transpose(2, 3)
+        #[N, num_fg, 2, num_fg]
+        sorted_bbox = refined_proposal[sort_idx]
+        cls_mask = torch.arange(self.num_classes - 1).cuda()
+        cls_mask = cls_mask.reshape(1, -1, 1)
+        #[N, num_fg, 2]
+        cls_mask = cls_mask.repeat(sorted_bbox.shape[0], 1, 2)
+        size = cls_mask.shape
+        perm_idx1 = torch.arange(size[-1]).repeat(size[0] * size[1], 1).reshape(-1, 1)
+        perm_idx2 = torch.arange(size[1]).repeat(size[-1], 1).transpose(0, 1).reshape(-1, 1).repeat(size[0], 1)
+        perm_idx3 = torch.arange(size[0]).repeat(size[1] * size[-1], 1).transpose(0, 1).reshape(-1, 1)
+        perm_idx = torch.cat((perm_idx3, perm_idx2, perm_idx1), -1)
+        temp_idx = subscript_index(cls_mask, perm_idx).reshape(-1, 1)
+        #[N, num_fg, 2]
+        sorted_bbox = subscript_index(sorted_bbox, torch.cat((perm_idx, temp_idx), -1))
+        nms_rank_embedding = extract_rank_embedding(cls_score.shape[0], 256)
+        nms_rank_feat = self.fc1_nms(nms_rank_embedding)
+        #[num_fg, N, N, 2]
+        nms_position_matrix = extract_multi_position_matrix(sorted_bbox)
+        roi_feat_embedding = self.fc2_nms(x)
+        #[N, num_fg, 128]
+        sorted_roi_feat = roi_feat_embedding[sort_idx]
+        nms_embedding_feat = sorted_roi_feat + nms_rank_feat.reshape(nms_rank_feat.shape[0], 1, nms_rank_feat.shape[1])
+        nms_attention, _ = self.nms_relation.forward(nms_embedding_feat, nms_position_matrix, sorted_roi_feat.shape[0])
+        nms_all_feat = self.relu(nms_embedding_feat + nms_attention)
+        nms_all_feat = nms_all_feat.reshape(-1, 128)
+        nms_logit = self.fc3_nms(nms_all_feat)
+        #[N, num_fg]
+        nms_logit = nms_logit.reshape(sorted_roi_feat.shape[0], sorted_roi_feat.shape[1])
+        nms_score = nn.Sigmoid()(nms_logit)
+        nms_score = torch.mul(nms_score, sorted_score)
+        self.sorted_bbox = sorted_bbox
+        self.sorted_score = sorted_score
         #pdb.set_trace()
-        return cls_score, proposal_offset, object_cls_score, object_offset
+        return cls_score, proposal_offset, object_cls_score, object_offset, nms_score
 
-    def get_loss(self, cls_score, proposal_offset, object_cls_score, object_offset, gt_boxes):#gt_boxes [N, 3] (idx, start, end) idx中类别也是从1开始
+#TODO 添加nms loss
+    def get_loss(self, cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes):#gt_boxes [N, 3] (idx, start, end) idx中类别也是从1开始
         #pdb.set_trace()
         rpn_label, rpn_bbox_offset = anchor_target_layer(gt_boxes[:, 1:], self.im_info, self.anchors_new)
         object_label, object_bbox_offset = object_target_layer(gt_boxes, self.im_info, self.proposal_bbox)
@@ -180,10 +274,16 @@ class RC3D(nn.Module):
         object_offset = object_offset.reshape(-1, 2)
         e_index4 = e_index3 * (self.num_classes - 1) + object_label[e_index3] - 1
         loss4 = nn.SmoothL1Loss(reduction = 'mean')(object_offset[e_index4], object_bbox_offset[e_index3])
+        #nms_loss
+        nms_target = nms_multi_target(self.sorted_bbox, gt_boxes, self.sorted_score, cfg.Network.nms_threshold)
+        positive_num = (nms_target == 1).sum()
+        negative_num = (nms_target == 0).sum()
+        nms_weight = torch.tensor([(positive_num + negative_num)/negative_num, (positive_num + negative_num)/positive_num]).float()
+        loss5 = nn.BCELoss(weight = nms_weight)(nms_score + cfg.Train.nms_eps, nms_target)
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()
-        return loss1 + cfg.Train.regularization * loss2 + cfg.Train.cls_regularization * loss3 + cfg.Train.regularization * loss4, loss1, loss2, loss3, loss4
+        return loss1 + cfg.Train.regularization * loss2 + cfg.Train.cls_regularization * loss3 + cfg.Train.regularization * loss4 + cfg.Train.nms_regularization * loss5, loss1, loss2, loss3, loss4, loss5
 
     def load(self, path, ltype=1):
         '''

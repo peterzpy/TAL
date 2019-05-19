@@ -246,7 +246,9 @@ class RC3D(nn.Module):
         creterion = nn.CrossEntropyLoss(weight = cls_object_weight.cuda())
         loss3 = creterion(object_cls_score[e_index2], object_label[e_index2].long())
         #object_bbox_loss
-        loss4 = nn.SmoothL1Loss(reduction = 'mean')(object_offset[e_index3], object_bbox_offset[e_index3])
+        object_offset = object_offset.reshape(-1, 2)
+        e_index4 = e_index3 * (self.num_classes - 1) + object_label[e_index3] - 1
+        loss4 = nn.SmoothL1Loss(reduction = 'mean')(object_offset[e_index4], object_bbox_offset[e_index3])
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()

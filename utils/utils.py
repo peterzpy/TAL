@@ -35,19 +35,11 @@ def proposal_nms(anchors, cls_prob, proposal_offset):
 def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
     #proposal_bbox [N, 2]
     #object_cls_score [N, C+1]
-    #object_offset [N, 2]
+    #object_offset [N, 2 * C]
     pdb.set_trace()
-    refined_proposal = torch.empty_like(proposal_bbox)
-    refined_proposal[:, 0] = proposal_bbox[:, 1] * object_offset[:, 0] + proposal_bbox[:, 0]
-    refined_proposal[:, 1] = proposal_bbox[:, 1] * torch.exp(object_offset[:, 1])
-    allow_border = 0
-    new_proposal = torch.empty_like(proposal_bbox)
-    new_proposal[:, 0] = refined_proposal[:, 0] - refined_proposal[:, 1]/2
-    new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 0]/2
-    indx = torch.nonzero((new_proposal[:, 0] >= allow_border) & (new_proposal[:, 1] <= im_info + allow_border) & (new_proposal[:, 0] < new_proposal[:, 1])).reshape(-1)
-    new_proposal = new_proposal[indx, :]
-    object_cls_score = object_cls_score[indx, :]
+    object_offset = object_offset.reshape(object_offset.shape[0], -1, 2)
     cls_prob, cls_prob_idx = torch.max(nn.Softmax(dim = -1)(object_cls_score), -1)
+    allow_border = 0
     object_bbox = dict()
     object_bbox['cls'] = []
     object_bbox['score'] = []
@@ -56,9 +48,16 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
         temp_prob = cls_prob[cls_prob_idx == i]
         if temp_prob.shape[0] == 0:
             continue
-        prob, temp_idx = torch.sort(temp_prob, descending = True)
-        temp_proposal = new_proposal[cls_prob_idx == i][temp_idx, :]
-        overlaps = bbox_overlap(temp_proposal, temp_proposal)
+        refined_proposal = torch.empty_like(proposal_bbox[cls_prob_idx == i])
+        new_proposal = torch.empty_like(proposal_bbox[cls_prob_idx == i])
+        refined_proposal[:, 0] = proposal_bbox[cls_prob_idx == i, 1] * object_offset[cls_prob_idx == i, i - 1, 0] + proposal_bbox[cls_prob_idx == i, 0]
+        refined_proposal[:, 1] = proposal_bbox[cls_prob_idx == i, 1] * torch.exp(object_offset[cls_prob_idx == i, i - 1,  1])
+        new_proposal[:, 0] = refined_proposal[:, 0] - refined_proposal[:, 1]/2
+        new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 0]/2
+        indx = torch.nonzero((new_proposal[:, 0] >= allow_border) & (new_proposal[:, 1] <= im_info + allow_border) & (new_proposal[:, 0] < new_proposal[:, 1])).reshape(-1)
+        prob, temp_idx = torch.sort(temp_prob[indx], descending = True)
+        new_proposal = new_proposal[indx, :][temp_idx, :]
+        overlaps = bbox_overlap(new_proposal, new_proposal)
         label = torch.ones(len(temp_idx))
         for j in range(0, len(temp_idx)):
             if label[j] == 0:
@@ -67,13 +66,13 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
                 continue
             object_bbox['cls'].append(i)
             object_bbox['score'].append(prob[j])
-            object_bbox['bbox'].append(temp_proposal[j, :])
-            for k in range(j+1, len(temp_idx)):
+            object_bbox['bbox'].append(new_proposal[j, :])
+            for k in range(j + 1, len(temp_idx)):
                 if overlaps[j, k] >= cfg.Train.nms_threshold:
                     label[k] = 0
-    if object_bbox['cls'] == []:
-        pdb.set_trace()
-    return object_bbox
+        if object_bbox['cls'] == []:
+            pdb.set_trace()
+        return object_bbox
 
 def bbox_overlap(boxes1, boxes2):
     #input [N1, 2]  [N2, 2]
@@ -187,7 +186,7 @@ def preprocess(video_path, image_path, video_annotation_path, annotation_path):
                     total += 1
                     cur_name = temp_name + "_" + "{:06d}".format(total)
                     #可能会有在最前面半段的标注，需要跳过
-                    while (annotation_action[index][1] + annotation_action[index][2])/2*cfg.Process.Frame < base + counter and index <= index_max:
+                    while index <= index_max and (annotation_action[index][1] + annotation_action[index][2])/2*cfg.Process.Frame < base + counter:
                         index += 1
                     if index > index_max:
                         break

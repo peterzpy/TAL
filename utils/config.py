@@ -8,6 +8,7 @@ cfg = _C
 _C.Process = edict()
 _C.Train = edict()
 _C.Test = edict()
+_C.Network = edict()
 
 _C.Process.dilation = 10
 _C.Process.Frame = 30
@@ -23,9 +24,10 @@ _C.Train.rpn_stride = 0.25
 #Relation Module
 #------------------------------------
 _C.Train.embedding_feat_dim = 64
-
+_C.Network.nms_threshold = 0.5
+_C.Train.nms_regularization = 1.2
+_C.Train.nms_eps = 1e-8
 #------------------------------------
-
 _C.Train.nms_threshold = 0.2
 _C.Train.rpn_batch_size = 256
 _C.Train.batch_size = 64
