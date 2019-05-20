@@ -10,6 +10,52 @@ import time
 import cv2
 import os
 
+def subscript_index(arr, idx):
+    '''
+    @params
+        arr 任意维度
+        idx 逐下标的索引
+    @outputs
+        result 针对下标对应的返回值
+    
+    examples:
+        >>> x = torch.randn(2, 2, 2, 3)
+            x = [[[[ 0.6956, -0.8183, -1.4719],
+                   [ 0.2080,  0.6601,  0.5879]],
+
+                   [[ 1.1300,  0.6284, -0.7488],
+                   [-1.7741, -0.3267,  1.6636]]],
+
+                   [[[ 0.0633,  0.1632,  0.2690],
+                   [ 1.8097,  0.4601,  0.4023]],
+
+                   [[-0.8845, -0.0035,  0.3874],
+                   [-0.9179,  0.7707,  2.2981]]]]
+
+        >>> y = torch.randint(3, (5, 3))
+            y = [[1, 1, 1],
+                 [1, 1, 1],
+                 [1, 1, 1],
+                 [1, 0, 0],
+                 [1, 0, 0]]
+        >>> result = subscript_index(x, y)
+            result = [[-0.9179,  0.7707,  2.2981],
+                      [-0.9179,  0.7707,  2.2981],
+                      [-0.9179,  0.7707,  2.2981],
+                      [ 0.0633,  0.1632,  0.2690],
+                      [ 0.0633,  0.1632,  0.2690]]
+    '''
+
+    assert torch.is_tensor(arr), "arr must be tensor"
+    assert torch.is_tensor(idx), "idx must be tensor"
+    num = idx.shape[0]
+    size = idx.shape[1]
+    assert size <= len(arr.shape), "idx don't match the arr"
+    result = arr[idx.chunk(num, -1)]
+    result = result.reshape((num, ) + arr.shape[size:])
+
+    return result
+    
 def proposal_nms(anchors, cls_prob, proposal_offset):
     index = torch.ones((cls_prob.size()[0], ), dtype = torch.long).cuda()
     refined_proposal = torch.empty_like(anchors) #[C, L]

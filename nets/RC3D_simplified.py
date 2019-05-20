@@ -203,7 +203,7 @@ class RC3D(nn.Module):
             else:
                 spp_feature = torch.cat((spp_feature, nn.AdaptiveMaxPool1d((7))(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1] + 1])), 0)
                 #spp_feature = torch.cat((spp_feature, self.soipooling(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1]])), 0)
-        x = self.conv2(spp_feature)
+        x = self.relu(self.conv2(spp_feature))
         x = x.view(x.size()[0], -1)
         x = self.relu(self.fc1(x))
         object_cls_score = self.cls(x)
@@ -240,7 +240,7 @@ class RC3D(nn.Module):
         #object_cls_loss
         cls_object_weight = torch.empty(self.num_classes).float()
         positive_num = (object_label > 0).sum()
-        negative_num = (rpn_label == 0).sum()
+        negative_num = (object_label == 0).sum()
         cls_object_weight[0] = (positive_num + negative_num)/negative_num
         cls_object_weight[1:] = (positive_num + negative_num)/positive_num
         creterion = nn.CrossEntropyLoss(weight = cls_object_weight.cuda())

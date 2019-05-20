@@ -11,58 +11,12 @@ import os
 import math
 import time
 from utils.config import cfg
-from utils.utils import proposal_nms
+from utils.utils import proposal_nms, subscript_index
 from layers.anchor_target_layer import anchor_target_layer
 from layers.object_target_layer import object_target_layer
 from layers.generate_anchor import generate_anchors
 from layers.nms_multi_target import nms_multi_target
 from nets.Relation import Relation, extract_position_embedding, extract_position_matrix, extract_rank_embedding, extract_multi_position_matrix, NMSRelation
-
-def subscript_index(arr, idx):
-    '''
-    @params
-        arr 任意维度
-        idx 逐下标的索引
-    @outputs
-        result 针对下标对应的返回值
-    
-    examples:
-        >>> x = torch.randn(2, 2, 2, 3)
-            x = [[[[ 0.6956, -0.8183, -1.4719],
-                   [ 0.2080,  0.6601,  0.5879]],
-
-                   [[ 1.1300,  0.6284, -0.7488],
-                   [-1.7741, -0.3267,  1.6636]]],
-
-                   [[[ 0.0633,  0.1632,  0.2690],
-                   [ 1.8097,  0.4601,  0.4023]],
-
-                   [[-0.8845, -0.0035,  0.3874],
-                   [-0.9179,  0.7707,  2.2981]]]]
-
-        >>> y = torch.randint(3, (5, 3))
-            y = [[1, 1, 1],
-                 [1, 1, 1],
-                 [1, 1, 1],
-                 [1, 0, 0],
-                 [1, 0, 0]]
-        >>> result = subscript_index(x, y)
-            result = [[-0.9179,  0.7707,  2.2981],
-                      [-0.9179,  0.7707,  2.2981],
-                      [-0.9179,  0.7707,  2.2981],
-                      [ 0.0633,  0.1632,  0.2690],
-                      [ 0.0633,  0.1632,  0.2690]]
-    '''
-
-    assert torch.is_tensor(arr), "arr must be tensor"
-    assert torch.is_tensor(idx), "idx must be tensor"
-    num = idx.shape[0]
-    size = idx.shape[1]
-    assert size <= len(arr.shape), "idx don't match the arr"
-    result = arr[idx.chunk(num, -1)]
-    result = result.reshape((num, ) + arr.shape[size:])
-
-    return result
 
 class Conv1d(nn.Module):
     
@@ -214,7 +168,7 @@ class RC3D(nn.Module):
         perm_idx1 = torch.arange(size[-1]).repeat(size[0] * size[1], 1).reshape(-1, 1)
         perm_idx2 = torch.arange(size[1]).repeat(size[-1], 1).transpose(0, 1).reshape(-1, 1).repeat(size[0], 1)
         perm_idx3 = torch.arange(size[0]).repeat(size[1] * size[-1], 1).transpose(0, 1).reshape(-1, 1)
-        perm_idx = torch.cat((perm_idx3, perm_idx2, perm_idx1), -1)
+        perm_idx = torch.cat((perm_idx3, perm_idx2, perm_idx1), -1).cuda()
         temp_idx = subscript_index(cls_mask, perm_idx).reshape(-1, 1)
         #[N, num_fg, 2]
         sorted_bbox = subscript_index(sorted_bbox, torch.cat((perm_idx, temp_idx), -1)).reshape(cls_mask.shape)
@@ -265,7 +219,7 @@ class RC3D(nn.Module):
         #object_cls_loss
         cls_object_weight = torch.empty(self.num_classes).float()
         positive_num = (object_label > 0).sum()
-        negative_num = (rpn_label == 0).sum()
+        negative_num = (object_label == 0).sum()
         cls_object_weight[0] = (positive_num + negative_num)/negative_num
         cls_object_weight[1:] = (positive_num + negative_num)/positive_num
         creterion = nn.CrossEntropyLoss(weight = cls_object_weight.cuda())

@@ -54,13 +54,24 @@ def test(args):
     with torch.no_grad():
         #pdb.set_trace()
         print(gt)
-        _, _, object_cls_score, object_offset, nms_score = model.forward(data)
+        _, _, object_cls_score, _, nms_score = model.forward(data)
         #bbox = utils.nms(model.proposal_bbox, object_cls_score, object_offset, model.num_classes, model.im_info)
+        object_cls_prob = nn.Softmax(-1)(object_cls_score)
+        object_cls_prob = object_cls_prob[:, 1:]
+        num_bbox = nms_score.shape[0]
+        label = torch.arange(1, num_classes).cuda()
+        label = label.repeat(num_bbox, 1)
+        idx = torch.nonzero(nms_score > cfg.Network.nms_threshold[0])
+        if idx.shape[0] == 0:
+            exit
+        bbox = utils.subscript_index(model.sorted_bbox, idx)
+        cls_score = utils.subscript_index(object_cls_prob, idx)
+        cls_label = utils.subscript_index(label, idx)
         toc = time.time()
         torch.cuda.empty_cache()
         runtime.update(toc-tic)
         print('Time {runtime.val:.3f} ({runtime.avg:.3f})\t'.format(runtime=runtime))
-        for _cls, score, proposal in zip(bbox['cls'], bbox['score'], bbox['bbox']):
+        for _cls, score, proposal in zip(cls_label, cls_score, bbox):
             print("class:{:}({:})\t   score:{:.6f}\t   start:{:.2f}\t  end:{:.2f}\t".format(id_to_name[_cls], _cls, score, proposal[0], proposal[1]))
 
 if __name__ == '__main__':
