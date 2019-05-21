@@ -106,7 +106,7 @@ class RC3D(nn.Module):
         return inputs_reshape
 
     def forward(self, inputs):
-        self.im_info = inputs.size()[-1]
+        self.im_info = cfg.Process.length
         feature = self.backbone(inputs) #[N, L/8, 1024]
         feature = feature.transpose(1, 2)
         x = self.conv1(feature)
@@ -114,10 +114,9 @@ class RC3D(nn.Module):
         self.anchors = torch.tensor(generate_anchors(x.size()[-1], 8, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
         cls_prob = self._cls_prob(cls_score).reshape(-1, 2)
         proposal_offset_reshaped = self._reshape(proposal_offset).reshape(-1, 2)
-        proposal_idx, proposal_bbox = proposal_nms(self.anchors, cls_prob, proposal_offset_reshaped)
+        proposal_idx, proposal_bbox = proposal_nms(self.anchors, cls_prob, proposal_offset_reshaped, self.im_info)
         proposal_offset = proposal_offset_reshaped[proposal_idx]
         #proposal_prob = cls_prob[proposal_idx]
-        new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
         new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
         new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / 8), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
         new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / 8), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
@@ -131,7 +130,7 @@ class RC3D(nn.Module):
             else:
                 spp_feature = torch.cat((spp_feature, nn.AdaptiveMaxPool1d((7))(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1] + 1])), 0)
                 #spp_feature = torch.cat((spp_feature, self.soipooling(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1]])), 0)
-        x = self.conv2(spp_feature)
+        x = self.relu(self.conv2(spp_feature))
         x = x.view(x.size()[0], -1)
         x = self.fc1(x)
         #这里的nongt_dim 可以选取别的值
@@ -183,17 +182,17 @@ class RC3D(nn.Module):
         nms_attention, _ = self.nms_relation.forward(nms_embedding_feat, nms_position_matrix, sorted_roi_feat.shape[0])
         nms_all_feat = self.relu(nms_embedding_feat + nms_attention)
         nms_all_feat = nms_all_feat.reshape(-1, 128)
-        nms_logit = self.fc3_nms(nms_all_feat)
+        nms_logit = self.fc3_nms(nms_all_fe作者在实验中采用的是公式5的focal loss（结合了公式3和公式4，这样既能调整正负样本的权重，又能控制难易分类样本的权重）：
         #[N, num_fg]
-        nms_logit = nms_logit.reshape(sorted_roi_feat.shape[0], sorted_roi_feat.shape[1])
-        nms_score = nn.Sigmoid()(nms_logit)
+        nms_logit = nms_logit.reshape(sorte作者在实验中采用的是公式5的focal loss（结合了公式3和公式4，这样既能调整正负样本的权重，又能控制难易分类样本的权重）：
+        nms_score = nn.Sigmoid()(nms_logit)作者在实验中采用的是公式5的focal loss（结合了公式3和公式4，这样既能调整正负样本的权重，又能控制难易分类样本的权重）：
         nms_score = torch.mul(nms_score, sorted_score)
         self.sorted_bbox = sorted_bbox
         self.sorted_score = sorted_score
         #pdb.set_trace()
         return cls_score, proposal_offset, object_cls_score, object_offset, nms_score
 
-    def get_loss(self, cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes):#gt_boxes [N, 3] (idx, start, end) idx中类别也是从1开始
+    def get_loss(self, cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes, focal_loss = False):#gt_boxes [N, 3] (idx, start, end) idx中类别也是从1开始
         #pdb.set_trace()
         rpn_label, rpn_bbox_offset = anchor_target_layer(gt_boxes[:, 1:], self.im_info, self.anchors_new)
         object_label, object_bbox_offset = object_target_layer(gt_boxes, self.im_info, self.proposal_bbox)
@@ -230,11 +229,16 @@ class RC3D(nn.Module):
         loss4 = nn.SmoothL1Loss(reduction = 'mean')(object_offset[e_index4], object_bbox_offset[e_index3])
         #nms_loss
         nms_target = nms_multi_target(self.sorted_bbox, gt_boxes, self.sorted_score, cfg.Network.nms_threshold)
-        #positive_num = (nms_target == 1).sum()
-        #negative_num = (nms_target == 0).sum()
-        nms_pos_loss = - torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target)
-        nms_neg_loss = - torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target)
-        loss5 = (nms_pos_loss + nms_neg_loss).reshape(-1).mean()
+        positive_num = (nms_target == 1).sum()
+        negative_num = (nms_target == 0).sum()
+        if focal_loss == False:
+            nms_pos_loss = - torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target)
+            nms_neg_loss = - torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target)
+            loss5 = (0.5 * nms_pos_loss + 0.5 * nms_neg_loss).reshape(-1).mean()
+        else:
+            nms_pos_loss = - torch.mul(torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target), torch.pow(1 - nms_score, cfg.Train.cls_gamma))
+            nms_neg_loss = - torch.mul(torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target), torch.pow(nms_score, cfg.Train.cls_gamma))
+            loss5 = (negative_num / (positive_num + negative_num) * nms_pos_loss + positive_num / (positive_num + negative_num) * nms_neg_loss).reshape(-1).mean()
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()

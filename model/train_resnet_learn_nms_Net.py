@@ -100,7 +100,7 @@ def train(args):
         if step % args.display_per_iters == 0 and step:
             print('iter: [{0}]\t' 'Loss {loss.avg:.4f}\t'
                   'Time {runtime.val:.3f} ({runtime.avg:.3f})\n'
-                  'RPN:\nCls_Loss {loss1.avg:.4f}\t Bbox_Loss {loss2.avg:.4f}\nProposal:\nCls_Loss {loss3.avg:.4f}\t Bbox_Loss {loss4.avg:.4f}\n''NMS:\nLoss {loss5.avg:.4f}'.format(step, runtime=runtime, loss=cost, loss1=cost1, loss2=cost2, loss3=cost3, loss4=cost4, loss5=cost5))
+                  'RPN:\nCls_Loss {loss1.avg:.4f}\t Bbox_Loss {loss2.avg:.4f}\nProposal:\nCls_Loss {loss3.avg:.4f}\t Bbox_Loss {loss4.avg:.4f}\n''NMS:\nLoss {loss5.avg:.4f}\n'.format(step, runtime=runtime, loss=cost, loss1=cost1, loss2=cost2, loss3=cost3, loss4=cost4, loss5=cost5))
         if step % args.snapshot_per_iters == 0 and step:
             try:
                 os.remove(ckpt_path)

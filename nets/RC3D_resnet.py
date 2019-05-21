@@ -101,7 +101,7 @@ class RC3D(nn.Module):
         return inputs_reshape
 
     def forward(self, inputs):
-        self.im_info = inputs.size()[-1]
+        self.im_info = cfg.Process.length
         feature = self.backbone(inputs) #[N, L/8, 1024]
         feature = feature.transpose(1, 2)
         x = self.relu(self.conv1(feature))
@@ -109,10 +109,9 @@ class RC3D(nn.Module):
         self.anchors = torch.tensor(generate_anchors(x.size()[-1], 8, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
         cls_prob = self._cls_prob(cls_score).reshape(-1, 2)
         proposal_offset_reshaped = self._reshape(proposal_offset).reshape(-1, 2)
-        proposal_idx, proposal_bbox = proposal_nms(self.anchors, cls_prob, proposal_offset_reshaped)
+        proposal_idx, proposal_bbox = proposal_nms(self.anchors, cls_prob, proposal_offset_reshaped, self.im_info)
         proposal_offset = proposal_offset_reshaped[proposal_idx]
         #proposal_prob = cls_prob[proposal_idx]
-        new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
         new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
         new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / 8), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
         new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / 8), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()

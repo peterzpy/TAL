@@ -56,7 +56,7 @@ def subscript_index(arr, idx):
 
     return result
     
-def proposal_nms(anchors, cls_prob, proposal_offset):
+def proposal_nms(anchors, cls_prob, proposal_offset, im_info = 64):
     index = torch.ones((cls_prob.size()[0], ), dtype = torch.long).cuda()
     refined_proposal = torch.empty_like(anchors) #[C, L]
     refined_proposal[:, 0] = proposal_offset[:, 0] * anchors[:, 1] + anchors[:, 0]
@@ -64,7 +64,9 @@ def proposal_nms(anchors, cls_prob, proposal_offset):
     new_proposal = torch.empty_like(anchors)
     new_proposal[:, 0] = refined_proposal[:, 0] - refined_proposal[:, 1] / 2
     new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 1] / 2
-    _, sort_index = torch.sort(cls_prob[:, 0], dim = 0, descending = True)
+    #clip
+    new_proposal = torch.max(torch.min(new_proposal, torch.ones_like(new_proposal) * (im_info - 1)), torch.zeros_like(new_proposal))
+    _, sort_index = torch.sort(cls_prob[:, 1], dim = 0, descending = True)
     if cls_prob.size()[0] > cfg.Train.rpn_pre_nms:
         sort_index = sort_index[:cfg.Train.rpn_pre_nms]
     index[cfg.Train.rpn_pre_nms:] = 0
@@ -85,7 +87,6 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
     pdb.set_trace()
     object_offset = object_offset.reshape(object_offset.shape[0], -1, 2)
     cls_prob, cls_prob_idx = torch.max(nn.Softmax(dim = -1)(object_cls_score), -1)
-    allow_border = 0
     object_bbox = dict()
     object_bbox['cls'] = []
     object_bbox['score'] = []
@@ -100,16 +101,16 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
         refined_proposal[:, 1] = proposal_bbox[cls_prob_idx == i, 1] * torch.exp(object_offset[cls_prob_idx == i, i - 1,  1])
         new_proposal[:, 0] = refined_proposal[:, 0] - refined_proposal[:, 1]/2
         new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 0]/2
-        indx = torch.nonzero((new_proposal[:, 0] >= allow_border) & (new_proposal[:, 1] <= im_info + allow_border) & (new_proposal[:, 0] < new_proposal[:, 1])).reshape(-1)
-        prob, temp_idx = torch.sort(temp_prob[indx], descending = True)
-        new_proposal = new_proposal[indx, :][temp_idx, :]
+        new_proposal = torch.max(torch.min(new_proposal, torch.ones_like(new_proposal) * (im_info - 1)), torch.zeros_like(new_proposal))
+        prob, temp_idx = torch.sort(temp_prob, descending = True)
+        new_proposal = new_proposal[temp_idx, :]
         overlaps = bbox_overlap(new_proposal, new_proposal)
         label = torch.ones(len(temp_idx))
         for j in range(0, len(temp_idx)):
             if label[j] == 0:
                 continue
-            if prob[j] < cfg.Test.score_threshold:
-                continue
+            #if prob[j] < cfg.Test.score_threshold:
+            #    continue
             object_bbox['cls'].append(i)
             object_bbox['score'].append(prob[j])
             object_bbox['bbox'].append(new_proposal[j, :])

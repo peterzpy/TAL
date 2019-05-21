@@ -40,6 +40,7 @@ _C.Train.rpn_post_nms = 300
 _C.Train.regularization = 1.2
 _C.Train.cls_regularization = 1.2
 _C.Train.Image_shape = (160, 160)
+_C.Train.cls_gamma = 1
 
 _C.Test.frmae = 112
 _C.Test.Image_shape = (160, 160)
