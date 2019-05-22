@@ -24,11 +24,11 @@ _C.Train.rpn_stride = 0.25
 #Relation Module
 #------------------------------------
 _C.Train.embedding_feat_dim = 64
-_C.Network.nms_threshold = [0.5]
+_C.Network.nms_threshold = [0.4]
 _C.Train.nms_regularization = 1.2
 _C.Train.nms_eps = 1e-8
 #------------------------------------
-_C.Train.nms_threshold = 0.2
+_C.Train.nms_threshold = 0.4
 _C.Train.rpn_batch_size = 256
 _C.Train.batch_size = 64
 _C.Train.fg_fraction = 0.25

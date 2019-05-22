@@ -237,11 +237,11 @@ class RC3D(nn.Module):
         if focal_loss == False:
             nms_pos_loss = - torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target)
             nms_neg_loss = - torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target)
-            loss5 = (0.5 * nms_pos_loss + 0.5 * nms_neg_loss).reshape(-1).mean()
+            loss5 = (nms_pos_loss + nms_neg_loss).reshape(-1).mean()
         else:
             nms_pos_loss = - torch.mul(torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target), torch.pow(1 - nms_score, cfg.Train.cls_gamma))
             nms_neg_loss = - torch.mul(torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target), torch.pow(nms_score, cfg.Train.cls_gamma))
-            loss5 = (negative_num / (positive_num + negative_num) * nms_pos_loss + positive_num / (positive_num + negative_num) * nms_neg_loss).reshape(-1).mean()
+            loss5 = (nms_pos_loss + nms_neg_loss).reshape(-1).mean()
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()
