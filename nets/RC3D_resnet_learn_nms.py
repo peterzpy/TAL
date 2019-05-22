@@ -182,10 +182,10 @@ class RC3D(nn.Module):
         nms_attention, _ = self.nms_relation.forward(nms_embedding_feat, nms_position_matrix, sorted_roi_feat.shape[0])
         nms_all_feat = self.relu(nms_embedding_feat + nms_attention)
         nms_all_feat = nms_all_feat.reshape(-1, 128)
-        nms_logit = self.fc3_nms(nms_all_fe作者在实验中采用的是公式5的focal loss（结合了公式3和公式4，这样既能调整正负样本的权重，又能控制难易分类样本的权重）：
+        nms_logit = self.fc3_nms(nms_all_feat)
         #[N, num_fg]
-        nms_logit = nms_logit.reshape(sorte作者在实验中采用的是公式5的focal loss（结合了公式3和公式4，这样既能调整正负样本的权重，又能控制难易分类样本的权重）：
-        nms_score = nn.Sigmoid()(nms_logit)作者在实验中采用的是公式5的focal loss（结合了公式3和公式4，这样既能调整正负样本的权重，又能控制难易分类样本的权重）：
+        nms_logit = nms_logit.reshape(sorted_roi_feat.shape[0], sorted_roi_feat.shape[1])
+        nms_score = nn.Sigmoid()(nms_logit)
         nms_score = torch.mul(nms_score, sorted_score)
         self.sorted_bbox = sorted_bbox
         self.sorted_score = sorted_score
