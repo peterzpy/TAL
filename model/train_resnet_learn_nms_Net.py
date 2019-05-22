@@ -37,10 +37,15 @@ def arg_parse():
     parser.add_argument("--display_per_iters", dest = "display_per_iters", type = int, default = 20)
     parser.add_argument("--snapshot_per_iters", dest = "snapshot_per_iters", type = int, default = 1000)
     parser.add_argument("--clear_per_iters", dest = "clear_per_iters", type = int, default = 1000)
+    parser.add_argument("--focal_loss", dest = "focal_loss", type = str, default = 'False')
     args = parser.parse_args()
     return args
 
 def train(args):
+    if args.focal_loss == 'False':
+        focal_loss = False
+    else:
+        focal_loss = True
     ckpt_path = args.checkpoint_path
     cost = AverageMeter()
     cost1 = AverageMeter()
@@ -84,7 +89,7 @@ def train(args):
         data = torch.tensor(train_data, device = 'cuda', dtype = torch.float32)
         gt_boxes = torch.tensor(gt_boxes, device = 'cuda', dtype = torch.float32)
         cls_score, proposal_offset, object_cls_score, object_offset, nms_score = model.forward(data)
-        loss, loss1, loss2, loss3, loss4, loss5 = model.get_loss(cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes)
+        loss, loss1, loss2, loss3, loss4, loss5 = model.get_loss(cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes, focal_loss)
         cost.update(loss)
         cost1.update(loss1)
         cost2.update(loss2)
@@ -106,7 +111,7 @@ def train(args):
                 os.remove(ckpt_path)
             except Exception:
                 pass
-            ckpt_path = os.path.join(args.checkpoint_path, "ResNet_{:05d}.ckpt".format(step))
+            ckpt_path = os.path.join(args.checkpoint_path, "ResNetNMS_{:05d}.ckpt".format(step))
             model.save(ckpt_path)
         if step % args.clear_per_iters == 0:
             cost.reset()

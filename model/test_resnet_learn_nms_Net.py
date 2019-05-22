@@ -34,7 +34,7 @@ def test(args):
     try:
         names = os.listdir(ckpt_path)
         for name in names:
-            out = re.findall("ResNet_.*", name)
+            out = re.findall("ResNetNMS_.*", name)
             if out != []:
                 ckpt_path = out[0]
                 break
