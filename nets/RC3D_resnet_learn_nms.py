@@ -187,7 +187,10 @@ class RC3D(nn.Module):
         nms_logit = nms_logit.reshape(sorted_roi_feat.shape[0], sorted_roi_feat.shape[1])
         nms_score = nn.Sigmoid()(nms_logit)
         nms_score = torch.mul(nms_score, sorted_score)
-        self.sorted_bbox = sorted_bbox
+        temp_bbox = torch.empty_like(sorted_bbox)
+        temp_bbox[:, 0] = sorted_bbox[:, 0] - sorted_bbox[:, 1] / 2
+        temp_bbox[:, 1] = sorted_bbox[:, 0] + sorted_bbox[:, 1] / 2
+        self.sorted_bbox = temp_bbox
         self.sorted_score = sorted_score
         #pdb.set_trace()
         return cls_score, proposal_offset, object_cls_score, object_offset, nms_score
