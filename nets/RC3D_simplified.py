@@ -176,7 +176,7 @@ class RC3D(nn.Module):
         self.im_info = cfg.Process.length
         feature = self.backbone(inputs)  #[N, 1024, L/16]
         feature = feature.transpose(1, 2)
-        x = self.conv1(feature)
+        x = self.relu(self.conv1(feature))
         #self.rpn_proposal = []
         #for i in range(self.num_anchors):
         #    self.anchors[i](x)

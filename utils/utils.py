@@ -72,7 +72,7 @@ def proposal_nms(anchors, cls_prob, proposal_offset, im_info = 64):
     index[cfg.Train.rpn_pre_nms:] = 0
     sorted_proposal = new_proposal[sort_index, :]
     overlaps = bbox_overlap(sorted_proposal[0:1, :], sorted_proposal)
-    index[1 + torch.nonzero(overlaps[0, 1:]  >= cfg.Train.rpn_nms).squeeze()] = 0
+    index[1 + torch.nonzero(overlaps[0, 1:]  >= cfg.Train.rpn_nms).reshape(-1)] = 0
     rpn_reserve_index = torch.nonzero(index == 1).view(-1)
     if len(rpn_reserve_index) > cfg.Train.rpn_post_nms:
         index[rpn_reserve_index[cfg.Train.rpn_post_nms:]] = 0
@@ -111,9 +111,9 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
                 continue
             #if prob[j] < cfg.Test.score_threshold:
             #    continue
-            object_bbox['cls'].append(i)
-            object_bbox['score'].append(prob[j])
-            object_bbox['bbox'].append(new_proposal[j, :])
+            object_bbox['cls'].append(torch.tensor([i]))
+            object_bbox['score'].append(prob[j:j+1])
+            object_bbox['bbox'].append(new_proposal[j:j+1, :])
             for k in range(j + 1, len(temp_idx)):
                 if overlaps[j, k] >= cfg.Train.nms_threshold:
                     label[k] = 0
@@ -267,18 +267,16 @@ def preprocess(video_path, image_path, video_annotation_path, annotation_path):
 
 def Batch_Generator(name_to_id, num_classes, image_path = "/home/share2/zhangpengyi/data/ActionImage/", annotation_path = "/home/share2/zhangpengyi/data/ActionLabel/", mode = 'train'):
     image_names = os.listdir(image_path)
-    while True:
-        random.shuffle(image_names)
-        for image_name in image_names:
-            image_list = os.listdir(os.path.join(image_path, image_name))
-            frame_num = len(image_list)
-            data = np.empty((1, 3, frame_num, ) + tuple(cfg.Train.Image_shape))
-            for indx, image in enumerate(image_list):
-                im = plt.imread(os.path.join(image_path, image_name, image))
-                data[0, :, indx, :, :] = im.reshape(3, im.shape[0], im.shape[1])
-            if mode == 'test':
-                yield data
-            else:
+    if mode == 'train':
+        while True:
+            random.shuffle(image_names)
+            for image_name in image_names:
+                image_list = os.listdir(os.path.join(image_path, image_name))
+                frame_num = len(image_list)
+                data = np.empty((1, 3, frame_num, ) + tuple(cfg.Train.Image_shape))
+                for indx, image in enumerate(image_list):
+                    im = plt.imread(os.path.join(image_path, image_name, image))
+                    data[0, :, indx, :, :] = im.reshape(3, im.shape[0], im.shape[1])
                 with open(os.path.join(annotation_path, image_name+".txt")) as f:
                     lines = f.readlines()
                     label = np.empty((len(lines), 3))
@@ -288,3 +286,20 @@ def Batch_Generator(name_to_id, num_classes, image_path = "/home/share2/zhangpen
                         label[i, 1] = float(line[1])
                         label[i, 2] = float(line[2].strip())
                 yield data, label
+    else:
+        for image_name in image_names:
+            image_list = os.listdir(os.path.join(image_path, image_name))
+            frame_num = len(image_list)
+            data = np.empty((1, 3, frame_num, ) + tuple(cfg.Train.Image_shape))
+            for indx, image in enumerate(image_list):
+                im = plt.imread(os.path.join(image_path, image_name, image))
+                data[0, :, indx, :, :] = im.reshape(3, im.shape[0], im.shape[1])
+            with open(os.path.join(annotation_path, image_name+".txt")) as f:
+                lines = f.readlines()
+                label = np.empty((len(lines), 3))
+                for i, line in enumerate(lines):
+                    line = line.split(" ")
+                    label[i, 0] = int(line[0])
+                    label[i, 1] = float(line[1])
+                    label[i, 2] = float(line[2].strip())
+            yield data, label

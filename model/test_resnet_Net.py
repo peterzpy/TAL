@@ -61,7 +61,7 @@ def test(args):
         runtime.update(toc-tic)
         print('Time {runtime.val:.3f} ({runtime.avg:.3f})\t'.format(runtime=runtime))
         for _cls, score, proposal in zip(bbox['cls'], bbox['score'], bbox['bbox']):
-            print("class:{:}({:})\t   score:{:.6f}\t   start:{:.2f}\t  end:{:.2f}\t".format(id_to_name[_cls], _cls, score, proposal[0], proposal[1]))
+            print("class:{:}({:})\t   score:{:.6f}\t   start:{:.2f}\t  end:{:.2f}\t".format(id_to_name[_cls[0]], _cls[0], score[0], proposal[0, 0], proposal[0, 1]))
         
 
 if __name__ == '__main__':

@@ -109,7 +109,7 @@ class RC3D(nn.Module):
         self.im_info = cfg.Process.length
         feature = self.backbone(inputs) #[N, L/8, 1024]
         feature = feature.transpose(1, 2)
-        x = self.conv1(feature)
+        x = self.relu(self.conv1(feature))
         cls_score, proposal_offset = self.segment_proposal(x)
         self.anchors = torch.tensor(generate_anchors(x.size()[-1], 8, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
         cls_prob = self._cls_prob(cls_score).reshape(-1, 2)
@@ -136,7 +136,7 @@ class RC3D(nn.Module):
         #这里的nongt_dim 可以选取别的值
         #TODO选择映射后的且扩大感受野的ROI区域
         nongt_dim = x.shape[0]
-        position_matrix = extract_position_matrix(new_proposal, nongt_dim)
+        position_matrix = extract_position_matrix(proposal_bbox, nongt_dim)
         position_embedding = extract_position_embedding(position_matrix, cfg.Train.embedding_feat_dim)
         attention = self.relation.forward(x, position_embedding, nongt_dim)
         x = self.relu(x + attention)
@@ -152,10 +152,14 @@ class RC3D(nn.Module):
         cls_obj_prob = nn.Softmax(-1)(object_cls_score)
         cls_prob_nonbg = cls_obj_prob[:, 1:]
         sorted_score, sort_idx = torch.sort(cls_prob_nonbg, 0)
+        _refined_proposal = torch.empty_like(object_offset)
         refined_proposal = torch.empty_like(object_offset)
         proposal_bbox = proposal_bbox.reshape(proposal_bbox.shape[0], 1, proposal_bbox.shape[1])
-        refined_proposal[:, :, 0] = proposal_bbox[:, :, 1] * object_offset[:, :, 0] + proposal_bbox[:, :, 0]
-        refined_proposal[:, :, 1] = torch.exp(object_offset[:, :, 1]) * proposal_bbox[:, :, 1]
+        _refined_proposal[:, :, 0] = proposal_bbox[:, :, 1] * object_offset[:, :, 0] + proposal_bbox[:, :, 0]
+        _refined_proposal[:, :, 1] = torch.exp(object_offset[:, :, 1]) * proposal_bbox[:, :, 1]
+        refined_proposal[:, :, 0] = _refined_proposal[:, :, 0] - _refined_proposal[:, :, 1] / 2
+        refined_proposal[:, :, 1] = _refined_proposal[:, :, 0] + _refined_proposal[:, :, 1] / 2
+        refined_proposal = torch.max(torch.min(refined_proposal, torch.ones_like(refined_proposal) * (self.im_info - 1)), torch.zeros_like(refined_proposal))
         refined_proposal = refined_proposal.transpose(1, 2)
         #[N, num_fg, 2, num_fg]
         sorted_bbox = refined_proposal[sort_idx]
@@ -187,10 +191,7 @@ class RC3D(nn.Module):
         nms_logit = nms_logit.reshape(sorted_roi_feat.shape[0], sorted_roi_feat.shape[1])
         nms_score = nn.Sigmoid()(nms_logit)
         nms_score = torch.mul(nms_score, sorted_score)
-        temp_bbox = torch.empty_like(sorted_bbox)
-        temp_bbox[:, 0] = sorted_bbox[:, 0] - sorted_bbox[:, 1] / 2
-        temp_bbox[:, 1] = sorted_bbox[:, 0] + sorted_bbox[:, 1] / 2
-        self.sorted_bbox = temp_bbox
+        self.sorted_bbox = sorted_bbox
         self.sorted_score = sorted_score
         #pdb.set_trace()
         return cls_score, proposal_offset, object_cls_score, object_offset, nms_score
@@ -237,11 +238,11 @@ class RC3D(nn.Module):
         if focal_loss == False:
             nms_pos_loss = - torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target)
             nms_neg_loss = - torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target)
-            loss5 = (nms_pos_loss + nms_neg_loss).reshape(-1).mean()
+            loss5 = (3 * nms_pos_loss + nms_neg_loss).reshape(-1).mean()
         else:
             nms_pos_loss = - torch.mul(torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target), torch.pow(1 - nms_score, cfg.Train.cls_gamma))
             nms_neg_loss = - torch.mul(torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target), torch.pow(nms_score, cfg.Train.cls_gamma))
-            loss5 = (nms_pos_loss + nms_neg_loss).reshape(-1).mean()
+            loss5 = (3 * nms_pos_loss + nms_neg_loss).reshape(-1).mean()
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()

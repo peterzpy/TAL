@@ -38,8 +38,10 @@ def extract_multi_position_matrix(bbox):
         position_matrix [num_fg, N, N, 2]
     '''
     bbox = bbox.transpose(0, 1)
-    center = bbox[:, :, 0:1].float()
-    length = bbox[:, :, 1:2].float()
+    x1 = bbox[:, :, 0:1].float()
+    x2 = bbox[:, :, 1:2].float()
+    center = 0.5 * (x1 + x2)
+    length = x2 - x1 + 1
     center_new = center.transpose(1, 2)
     length_new = length.transpose(1, 2)
     delta_center = center - center_new

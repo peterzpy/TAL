@@ -15,7 +15,7 @@ _C.Process.Frame = 30
 _C.Process.length = 64
 
 
-_C.Train.anchor_size = [1, 2, 3, 4, 5, 6, 8, 11, 16]
+_C.Train.anchor_size = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48]
 _C.Train.learning_rate = 0.0001
 _C.Train.positive_threshold = 0.7
 _C.Train.negative_threshold = 0.3
@@ -25,7 +25,7 @@ _C.Train.rpn_stride = 0.25
 #------------------------------------
 _C.Train.embedding_feat_dim = 64
 _C.Network.nms_threshold = [0.4]
-_C.Train.nms_regularization = 1.2
+_C.Train.nms_regularization = 10
 _C.Train.nms_eps = 1e-8
 #------------------------------------
 _C.Train.nms_threshold = 0.4

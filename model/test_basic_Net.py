@@ -44,11 +44,12 @@ def test(args):
     model = model.cuda()
     model.zero_grad()
     model.load(ckpt_path)
-    test_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path, mode = 'test')
+    test_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
     tic = time.time()
-    test_data = next(test_batch)
+    test_data, gt = next(test_batch)
     data = torch.tensor(test_data, device = 'cuda', dtype = torch.float32)
     with torch.no_grad():
+        print(gt)
         _, _, object_cls_score, obejct_offset = model.forward(data)
         bbox = utils.nms(model.proposal_bbox, object_cls_score, obejct_offset, model.num_classes, model.im_info)
         toc = time.time()
@@ -56,7 +57,7 @@ def test(args):
         runtime.update(toc-tic)
         print('Time {runtime.val:.3f} ({runtime.avg:.3f})\t'.format(runtime=runtime))
         for _cls, score, proposal in zip(bbox['cls'], bbox['score'], bbox['bbox']):
-            print("class:{:}({:})\t   score:{:.6f}\t   start:{:.2f}\t  end:{:.2f}\t".format(id_to_name[_cls], _cls, score, proposal[0], proposal[1]))
+            print("class:{:}({:})\t   score:{:.6f}\t   start:{:.2f}\t  end:{:.2f}\t".format(id_to_name[_cls[0]], _cls[0], score[0], proposal[0, 0], proposal[0, 1]))
             
 if __name__ == "__main__":
     args = arg_parse()
