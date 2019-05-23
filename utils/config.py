@@ -15,7 +15,7 @@ _C.Process.Frame = 30
 _C.Process.length = 64
 
 
-_C.Train.anchor_size = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48]
+_C.Train.anchor_size = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40]
 _C.Train.learning_rate = 0.0001
 _C.Train.positive_threshold = 0.7
 _C.Train.negative_threshold = 0.3

@@ -75,6 +75,7 @@ def proposal_nms(anchors, cls_prob, proposal_offset, im_info = 64):
     index[1 + torch.nonzero(overlaps[0, 1:]  >= cfg.Train.rpn_nms).reshape(-1)] = 0
     rpn_reserve_index = torch.nonzero(index == 1).view(-1)
     if len(rpn_reserve_index) > cfg.Train.rpn_post_nms:
+        rpn_reserve_index = rpn_reserve_index[torch.argsort(overlaps[0, rpn_reserve_index])]
         index[rpn_reserve_index[cfg.Train.rpn_post_nms:]] = 0
     index = torch.nonzero(index == 1).reshape(-1)
 
@@ -199,11 +200,11 @@ def preprocess(video_path, image_path, video_annotation_path, annotation_path):
                         while(index <= index_max):
                             if (annotation_action[index][1] + annotation_action[index][2])/2 * cfg.Process.Frame  <= (counter + cfg.Process.dilation * cfg.Process.length):
                                 if annotation_action[index][1] * cfg.Process.Frame < counter and annotation_action[index][2] * cfg.Process.Frame > (counter + cfg.Process.dilation * cfg.Process.length):
-                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], 0, cfg.Process.length))
+                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], 0, cfg.Process.length - 1))
                                 elif annotation_action[index][1] * cfg.Process.Frame < counter:
                                     fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], 0, (annotation_action[index][2] * cfg.Process.Frame - counter) / cfg.Process.dilation))
                                 elif annotation_action[index][2] * cfg.Process.Frame > (counter + cfg.Process.dilation * cfg.Process.length):
-                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], (annotation_action[index][1] * cfg.Process.Frame - counter) / cfg.Process.dilation, cfg.Process.length))
+                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], (annotation_action[index][1] * cfg.Process.Frame - counter) / cfg.Process.dilation, cfg.Process.length - 1))
                                 else:
                                     fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], (annotation_action[index][1] * cfg.Process.Frame - counter) / cfg.Process.dilation, (annotation_action[index][2] * cfg.Process.Frame - counter) / cfg.Process.dilation))
                                 index += 1
@@ -243,11 +244,11 @@ def preprocess(video_path, image_path, video_annotation_path, annotation_path):
                         while(index <= index_max):
                             if (annotation_action[index][1] + annotation_action[index][2])/2 * cfg.Process.Frame  <= (base + counter + cfg.Process.dilation * cfg.Process.length):
                                 if annotation_action[index][1] * cfg.Process.Frame < base + counter and annotation_action[index][2] * cfg.Process.Frame > (base + counter + cfg.Process.dilation * cfg.Process.length):
-                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], 0, cfg.Process.length))
+                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], 0, cfg.Process.length - 1))
                                 elif annotation_action[index][1] * cfg.Process.Frame < base + counter:
                                     fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], 0, (annotation_action[index][2] * cfg.Process.Frame - counter - base) / cfg.Process.dilation))
                                 elif annotation_action[index][2] * cfg.Process.Frame > (base + counter + cfg.Process.dilation * cfg.Process.length):
-                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], (annotation_action[index][1] * cfg.Process.Frame - counter - base) / cfg.Process.dilation, cfg.Process.length))
+                                    fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], (annotation_action[index][1] * cfg.Process.Frame - counter - base) / cfg.Process.dilation, cfg.Process.length - 1))
                                 else:
                                     fw.write("{:d} {:f} {:f}\n".format(annotation_action[index][0], (annotation_action[index][1] * cfg.Process.Frame - counter - base) / cfg.Process.dilation, (annotation_action[index][2] * cfg.Process.Frame - counter - base) / cfg.Process.dilation))
                                 index += 1
@@ -302,4 +303,30 @@ def Batch_Generator(name_to_id, num_classes, image_path = "/home/share2/zhangpen
                     label[i, 0] = int(line[0])
                     label[i, 1] = float(line[1])
                     label[i, 2] = float(line[2].strip())
-            yield data, label
+            yield data, label, image_name
+    
+def generate_gt(annotation_path = "/home/share2/zhangpengyi/data/ActionLabel/", json_path = '../Annotation/', num_classes = 20):
+    fp = []
+    gt = []
+    for i in range(num_classes):
+        f = open(os.path.join(json_path, "GT_{}.json".format(str(i + 1))), 'w')
+        fp.append(f)
+        gt.append({})
+        gt[i]['num'] = 0
+        gt[i]['object'] = []
+    names = os.listdir(annotation_path)
+    for name in names:
+        with open(name) as f:
+            lines = f.readlines()
+            for line in lines:
+                _cls = int(line.split(' ')[0])
+                gt[_cls - 1]['num'] += 1
+                temp_dict = {}
+                temp_dict['file_name'] = name
+                temp_dict['use'] = False
+                temp_dict['start'] = float(line.split(' ')[1])
+                temp_dict['end'] = float(line.split(' ')[2])
+                gt[_cls - 1]['object'].append(temp_dict)
+    for i in range(num_classes):
+        json.dump(gt[i], fp[i])
+        fp[i].close()

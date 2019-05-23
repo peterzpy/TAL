@@ -133,10 +133,11 @@ class RC3D(nn.Module):
         x = self.relu(self.conv2(spp_feature))
         x = x.view(x.size()[0], -1)
         x = self.fc1(x)
+        del new_proposal
         #这里的nongt_dim 可以选取别的值
         #TODO选择映射后的且扩大感受野的ROI区域
         nongt_dim = x.shape[0]
-        position_matrix = extract_position_matrix(proposal_bbox, nongt_dim)
+        position_matrix = extract_position_matrix(new_proposal, nongt_dim)
         position_embedding = extract_position_embedding(position_matrix, cfg.Train.embedding_feat_dim)
         attention = self.relation.forward(x, position_embedding, nongt_dim)
         x = self.relu(x + attention)
@@ -160,6 +161,7 @@ class RC3D(nn.Module):
         refined_proposal[:, :, 0] = _refined_proposal[:, :, 0] - _refined_proposal[:, :, 1] / 2
         refined_proposal[:, :, 1] = _refined_proposal[:, :, 0] + _refined_proposal[:, :, 1] / 2
         refined_proposal = torch.max(torch.min(refined_proposal, torch.ones_like(refined_proposal) * (self.im_info - 1)), torch.zeros_like(refined_proposal))
+        del _refined_proposal
         refined_proposal = refined_proposal.transpose(1, 2)
         #[N, num_fg, 2, num_fg]
         sorted_bbox = refined_proposal[sort_idx]
