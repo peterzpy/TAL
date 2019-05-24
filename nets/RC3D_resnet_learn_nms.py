@@ -200,6 +200,7 @@ class RC3D(nn.Module):
         return cls_score, proposal_offset, object_cls_score, object_offset, nms_score
 
     def get_loss(self, cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes, focal_loss = False):#gt_boxes [N, 3] (idx, start, end) idx中类别也是从1开始
+        #TODO 检查一遍，再加一个分阶段训练
         #pdb.set_trace()
         rpn_label, rpn_bbox_offset = anchor_target_layer(gt_boxes[:, 1:], self.im_info, self.anchors_new)
         object_label, object_bbox_offset = object_target_layer(gt_boxes, self.im_info, self.proposal_bbox)
@@ -243,8 +244,8 @@ class RC3D(nn.Module):
             nms_neg_loss = - torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target)
             loss5 = (3 * nms_pos_loss + nms_neg_loss).reshape(-1).mean()
         else:
-            nms_pos_loss = - torch.mul(torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target), torch.pow(1 - nms_score, cfg.Train.cls_gamma))
-            nms_neg_loss = - torch.mul(torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target), torch.pow(nms_score, cfg.Train.cls_gamma))
+            nms_pos_loss = - torch.mul(torch.mul(torch.log(nms_score + cfg.Train.nms_eps), nms_target), torch.pow(1 - nms_score + cfg.Train.nms_eps, cfg.Train.cls_gamma))
+            nms_neg_loss = - torch.mul(torch.mul(torch.log(1 - nms_score + cfg.Train.nms_eps), 1 - nms_target), torch.pow(nms_score + cfg.Train.nms_eps, cfg.Train.cls_gamma))
             loss5 = (3 * nms_pos_loss + nms_neg_loss).reshape(-1).mean()
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)

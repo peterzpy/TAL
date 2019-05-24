@@ -36,9 +36,9 @@ def nms_multi_target(bbox, gt_bbox, score, threshold):
             eye_matrix = torch.eye(num_valid_gt_bbox).cuda()
             max_overlap_idx = torch.argmax(score_temp, 1).reshape(-1)
             #[N, K]
-            score_temp = score_temp * eye_matrix[max_overlap_idx]
-            score_max, score_idx = torch.max(score_temp, 0)
-            max_idx = torch.nonzero(score_max).reshape(-1)
+            score_temp *= eye_matrix[max_overlap_idx]
+            score_idx = torch.argmax(score_temp, 0).reshape(-1)
+            max_idx = torch.nonzero(torch.max(overlaps[score_idx], -1)[0].reshape(-1) > threshold[0]).reshape(-1)
             label[score_idx[max_idx]] = 1
             output_list.append(label)
     nms_target = torch.cat(output_list, -1)

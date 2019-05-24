@@ -75,7 +75,7 @@ def proposal_nms(anchors, cls_prob, proposal_offset, im_info = 64):
     index[1 + torch.nonzero(overlaps[0, 1:]  >= cfg.Train.rpn_nms).reshape(-1)] = 0
     rpn_reserve_index = torch.nonzero(index == 1).view(-1)
     if len(rpn_reserve_index) > cfg.Train.rpn_post_nms:
-        rpn_reserve_index = rpn_reserve_index[torch.argsort(overlaps[0, rpn_reserve_index])]
+        rpn_reserve_index = rpn_reserve_index[torch.argsort(overlaps[0, rpn_reserve_index], descending=True)]
         index[rpn_reserve_index[cfg.Train.rpn_post_nms:]] = 0
     index = torch.nonzero(index == 1).reshape(-1)
 
