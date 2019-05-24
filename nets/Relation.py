@@ -9,18 +9,18 @@ from utils.config import cfg
 def extract_position_matrix(bbox, nongt_dim):
     '''
     @params
-        bbox [N, 2]
+        bbox [N, 2] [C, L]
     @outputs
         position_matrix [N, nongt_dim, 2] 
     '''
     center = bbox[:, 0].float()
     length = bbox[:, 1].float()
     delta_center1, delta_center2 = torch.meshgrid(center, center)
-    delta_center = (delta_center1 - delta_center2) / length
-    delta_center = torch.log(torch.max(delta_center, torch.ones_like(delta_center) * 1e-3))
+    delta_center = (delta_center1 - delta_center2) / length.reshape(-1, 1)
+    delta_center = torch.log(torch.max(torch.abs(delta_center), torch.ones_like(delta_center) * 1e-3))
     delta_length1, delta_length2 = torch.meshgrid(length, length)
     delta_length = delta_length1 / delta_length2
-    delta_length = torch.log(torch.max(delta_length, torch.ones_like(delta_length) * 1e-3))
+    delta_length = torch.log(delta_length)
     concat_list = [delta_center, delta_length]
     for idx, delta in enumerate(concat_list):
         delta = delta[:, :nongt_dim]
@@ -33,7 +33,7 @@ def extract_multi_position_matrix(bbox):
     '''
     提取多类位置矩阵
     @params
-        bbox [N, num_fg, 2]
+        bbox [N, num_fg, 2] [X1, X2]
     @output
         position_matrix [num_fg, N, N, 2]
     '''
@@ -45,9 +45,10 @@ def extract_multi_position_matrix(bbox):
     center_new = center.transpose(1, 2)
     length_new = length.transpose(1, 2)
     delta_center = center - center_new
-    delta_center = torch.log(torch.max(delta_center, torch.ones_like(delta_center) * 1e-3))
+    delta_center = delta_center / length
+    delta_center = torch.log(torch.max(torch.abs(delta_center), torch.ones_like(delta_center) * 1e-3))
     delta_length = length / length_new
-    delta_length = torch.log(torch.max(delta_length, torch.ones_like(delta_length) * 1e-3))
+    delta_length = torch.log(delta_length)
     concat_list = [delta_center, delta_length]
     for idx, delta in enumerate(concat_list):
         concat_list[idx] = delta.reshape(delta.shape + (1, ))
@@ -203,12 +204,10 @@ class NMSRelation(nn.Module):
         #[num_fg, N, feat_dim]
         roi_feat = roi_feat.transpose(0, 1)
         position_embedding = extract_pairwise_multi_position_embedding(position_mat, self.fc_dim[0])
-        #[num_fg, N, N, fc_dim[0]]
-        position_embedding_reshaped = position_embedding.reshape(-1, self.fc_dim[0])
-        postion_feat1 = self.relu(self.fc1(position_embedding_reshaped))
-        aff_weight = postion_feat1.reshape(-1, num_rois, num_rois, self.fc_dim[1])
+        #[num_fg, N, N, fc_dim[1]]
+        postion_feat1 = self.relu(self.fc1(position_embedding))
         #[num_fg, fc_dim[1], N, N]
-        aff_weight = aff_weight.permute(0, 3, 1, 2)
+        aff_weight = postion_feat1.permute(0, 3, 1, 2)
         #[num_fg, N, dim[0]]
         q_data = self.fc2(roi_feat)
         #[num_fg, N, group, dim[0] / group]
@@ -236,11 +235,13 @@ class NMSRelation(nn.Module):
         output_t = torch.matmul(aff_softmax_reshaped, v_data)
         #[num_fg, fc_dim[1], N, feat_dim]
         output_t = output_t.reshape(-1, self.fc_dim[1], num_rois, self.feat_dim)
+        #[fc_dim[1], feat_dim, N, num_fg]
         output_t = output_t.permute(1, 3, 2, 0)
         #[1, fc_dim[1] * feat_dim, N, num_fg]
         output_t = output_t.reshape(1, -1, num_rois, aff_weight.shape[0])
         #[1, dim[2], N, num_fg]
         linear_out = self.conv(output_t)
+        #[N, num_fg, dim[2], 1]
         output = linear_out.permute(2, 3, 1, 0)
         output = linear_out.reshape(output.shape[0], output.shape[1], output.shape[2])
 

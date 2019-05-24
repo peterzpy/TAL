@@ -135,7 +135,7 @@ class RC3D(nn.Module):
         x = self.fc1(x)
         del new_proposal
         #这里的nongt_dim 可以选取别的值
-        #TODO选择映射后的且扩大感受野的ROI区域
+        #TODO 选择映射后的且扩大感受野的ROI区域
         nongt_dim = x.shape[0]
         position_matrix = extract_position_matrix(new_proposal, nongt_dim)
         position_embedding = extract_position_embedding(position_matrix, cfg.Train.embedding_feat_dim)
@@ -152,7 +152,8 @@ class RC3D(nn.Module):
         #----------------------------------------------------
         cls_obj_prob = nn.Softmax(-1)(object_cls_score)
         cls_prob_nonbg = cls_obj_prob[:, 1:]
-        sorted_score, sort_idx = torch.sort(cls_prob_nonbg, 0)
+        sorted_score, sort_idx = torch.sort(cls_prob_nonbg, 0, descending = True)
+        #[N, num_fg, 2]
         _refined_proposal = torch.empty_like(object_offset)
         refined_proposal = torch.empty_like(object_offset)
         proposal_bbox = proposal_bbox.reshape(proposal_bbox.shape[0], 1, proposal_bbox.shape[1])
@@ -163,7 +164,7 @@ class RC3D(nn.Module):
         refined_proposal = torch.max(torch.min(refined_proposal, torch.ones_like(refined_proposal) * (self.im_info - 1)), torch.zeros_like(refined_proposal))
         del _refined_proposal
         refined_proposal = refined_proposal.transpose(1, 2)
-        #[N, num_fg, 2, num_fg]
+        #[N, num_fg, 2, num_fg] [X1, X2]
         sorted_bbox = refined_proposal[sort_idx]
         cls_mask = torch.arange(self.num_classes - 1).cuda()
         cls_mask = cls_mask.reshape(1, -1, 1)
