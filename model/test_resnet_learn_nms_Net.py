@@ -54,10 +54,9 @@ def test(args):
     with torch.no_grad():
         #pdb.set_trace()
         print(gt)
-        _, _, object_cls_score, _, nms_score = model.forward(data)
+        _, _, _, _, nms_score = model.forward(data)
         #bbox = utils.nms(model.proposal_bbox, object_cls_score, object_offset, model.num_classes, model.im_info)
-        object_cls_prob = nn.Softmax(-1)(object_cls_score)
-        object_cls_prob = object_cls_prob[:, 1:]
+        pdb.set_trace()
         num_bbox = nms_score.shape[0]
         label = torch.arange(1, num_classes).cuda()
         label = label.repeat(num_bbox, 1)
@@ -65,7 +64,7 @@ def test(args):
         if idx.shape[0] == 0:
             exit
         bbox = utils.subscript_index(model.sorted_bbox, idx)
-        cls_score = utils.subscript_index(object_cls_prob, idx)
+        cls_score = utils.subscript_index(nms_score, idx)
         cls_label = utils.subscript_index(label, idx)
         toc = time.time()
         torch.cuda.empty_cache()

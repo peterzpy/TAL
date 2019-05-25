@@ -133,11 +133,11 @@ class RC3D(nn.Module):
         x = self.relu(self.conv2(spp_feature))
         x = x.view(x.size()[0], -1)
         x = self.fc1(x)
-        del new_proposal
         #这里的nongt_dim 可以选取别的值
         #TODO 选择映射后的且扩大感受野的ROI区域
         nongt_dim = x.shape[0]
         position_matrix = extract_position_matrix(new_proposal, nongt_dim)
+        del new_proposal
         position_embedding = extract_position_embedding(position_matrix, cfg.Train.embedding_feat_dim)
         attention = self.relation.forward(x, position_embedding, nongt_dim)
         x = self.relu(x + attention)

@@ -49,9 +49,14 @@ def subscript_index(arr, idx):
     assert torch.is_tensor(arr), "arr must be tensor"
     assert torch.is_tensor(idx), "idx must be tensor"
     num = idx.shape[0]
+    if num == 0:
+        return idx.reshape(num, 2)
     size = idx.shape[1]
     assert size <= len(arr.shape), "idx don't match the arr"
-    result = arr[idx.chunk(num, -1)]
+    if num != 1:
+        result = arr[idx.chunk(num, -1)]
+    else:
+        result = arr[tuple(idx[0])]
     result = result.reshape((num, ) + arr.shape[size:])
 
     return result
