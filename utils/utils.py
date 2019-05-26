@@ -310,7 +310,7 @@ def Batch_Generator(name_to_id, num_classes, image_path = "/home/share2/zhangpen
                     label[i, 2] = float(line[2].strip())
             yield data, label, image_name
     
-def generate_gt(annotation_path = "/home/share2/zhangpengyi/data/ActionLabel/", json_path = '../Annotation/', num_classes = 20):
+def generate_gt(annotation_path = "/home/share2/zhangpengyi/data/ActionTestLabel/", json_path = '../Annotation/', num_classes = 20):
     fp = []
     gt = []
     for i in range(num_classes):
@@ -321,7 +321,7 @@ def generate_gt(annotation_path = "/home/share2/zhangpengyi/data/ActionLabel/", 
         gt[i]['object'] = []
     names = os.listdir(annotation_path)
     for name in names:
-        with open(name) as f:
+        with open(os.path.join(annotation_path ,name)) as f:
             lines = f.readlines()
             for line in lines:
                 _cls = int(line.split(' ')[0])
@@ -335,3 +335,29 @@ def generate_gt(annotation_path = "/home/share2/zhangpengyi/data/ActionLabel/", 
     for i in range(num_classes):
         json.dump(gt[i], fp[i])
         fp[i].close()
+
+def ner_preprocess(video_path, image_path, video_annotation_path, annotation_path):
+    print("Begin to process the video!")
+    video_names = os.listdir(video_path)
+    f = open(video_annotation_path)
+    annotation = json.load(f)
+    for video_name in video_names:
+        temp_name = os.path.join(image_path, video_name.split('.')[0])
+        try:
+            annotation_action = annotation[video_name.split('.')[0]]['actions']
+        except Exception:
+            continue
+        cap = cv2.VideoCapture(os.path.join(video_path, video_name))
+        counter = 0
+        fw = open(os.path.join(annotation_path, video_name.split('.')[0])+".txt", 'w')
+        for i in range(len(annotation_action)):
+            fw.write("{:d} {:f} {:f}\n".format(annotation_action[i][0], annotation_action[i][1], annotation_action[i][2]))
+        fw.close()
+        while(cap.isOpened()):
+            ret, frame = cap.read()
+            if ret == False:
+                break
+            if counter % cfg.Process.new_dilation == 0:
+                frame = cv2.resize(frame, tuple(cfg.Train.Image_shape))
+                cv2.imwrite(os.path.join(temp_name, "{:05d}.jpg".format(int(counter/cfg.Process.new_dilation))), frame)
+            counter += 1

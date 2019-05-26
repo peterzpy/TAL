@@ -23,10 +23,13 @@ id_to_name = dict(enumerate(CLASSES))
 
 def arg_parse():
     parser = argparse.ArgumentParser(description = "ResNet")
-    parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionImage/')
-    parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionLabel/')
+    parser.add_argument("--preprocessed", dest = 'preprocessed', type = str, default = 'True')
+    parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestImage/')
+    parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestLabel/')
     parser.add_argument("--checkpoint_path", dest = 'checkpoint_path', type = str, default = '/home/share2/zhangpengyi/data/ActionCheckpoint/')
     parser.add_argument("--json_path", dest = 'json_path', type = str, default = '../Annotation/')
+    parser.add_argument("--video_path", dest = 'video_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestVideo/')
+    parser.add_argument("--video_annotation_path", dest = 'video_annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestVideoAnnotation/thumos14_test.json')
     parser.add_argument("--tiou", dest = 'tiou', type = float, default = 0.5)
     args = parser.parse_args()
     return args
@@ -65,6 +68,7 @@ def generate_det(args):
             _, _, object_cls_score, object_offset = model.forward(data)
             #bbox 是按照score降序排列的
             bbox = utils.nms(model.proposal_bbox, object_cls_score, object_offset, model.num_classes, model.im_info)
+            pdb.set_trace()
             for _cls, score, proposal in zip(bbox['cls'], bbox['score'], bbox['bbox']):
                 if proposal[:, 0] == proposal[:, 1]:
                     continue
@@ -151,6 +155,8 @@ def eval_mAP(args):
 if __name__ == '__main__':
     args = arg_parse()
     print(args)
+    if args.preprocessed == 'False':
+        utils.preprocess(args.video_path, args.image_path, args.video_annotation_path, args.annotation_path)
     utils.generate_gt(args.annotation_path)
     generate_det(args)
     eval_mAP(args)

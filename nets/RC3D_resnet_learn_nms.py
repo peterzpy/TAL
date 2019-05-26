@@ -69,10 +69,14 @@ class SegmentProposal(nn.Module):
 
 class RC3D(nn.Module):
 
-    def __init__(self, num_classes, image_shape):
+    def __init__(self, num_classes, image_shape, stack_feature):
         super(RC3D, self).__init__()
         self.num_classes = num_classes
-        self.anchor_size = cfg.Train.anchor_size
+        self.stack_feature = stack_feature
+        if stack_feature:
+            self.anchor_size = cfg.Train.new_anchor_size
+        else:
+            self.anchor_size = cfg.Train.anchor_size
         self.num_anchors = len(self.anchor_size)
         (H, W) = image_shape
         assert H % 16 == 0, "H must be times of 16"
@@ -106,8 +110,16 @@ class RC3D(nn.Module):
         return inputs_reshape
 
     def forward(self, inputs):
-        self.im_info = cfg.Process.length
-        feature = self.backbone(inputs) #[N, L/8, 1024]
+        if self.stack_feature:
+            self.im_info = inputs.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
+            for i in range(inputs.shape[2], cfg.Process.new_cluster):
+                if i == 0:
+                    feature = self.backbone(inputs[:, :, i : i + cfg.Process.new_cluster, :, :])
+                else:
+                    feature = torch.cat((feature, self.backbone(inputs[:, :, i : i + cfg.Process.new_cluster, :, :])), 1)
+        else:
+            self.im_info = cfg.Process.length
+            feature = self.backbone(inputs) #[N, L/8, 1024]
         feature = feature.transpose(1, 2)
         x = self.relu(self.conv1(feature))
         cls_score, proposal_offset = self.segment_proposal(x)
@@ -118,8 +130,12 @@ class RC3D(nn.Module):
         proposal_offset = proposal_offset_reshaped[proposal_idx]
         #proposal_prob = cls_prob[proposal_idx]
         new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
-        new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / 8), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
-        new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / 8), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
+        if self.stack_feature:
+            new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
+            new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
+        else:
+            new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / 8), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
+            new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / 8), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
         self.proposal_bbox = proposal_bbox
         for i in range(new_proposal.size()[0]):
             #if new_proposal[i, 0] > new_proposal[i, 1]:

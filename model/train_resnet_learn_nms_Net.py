@@ -23,6 +23,7 @@ id_to_name = dict(enumerate(CLASSES))
 
 def arg_parse():
     parser = argparse.ArgumentParser(description = "ResnetNetNMS")
+    parser.add_argument("--extract_feature", dest = 'extract_feature', type = str, default = 'False')
     parser.add_argument("--use_resnet_pth", dest = 'use_resnet_pth', type = str, default = 'False')
     parser.add_argument("--pth_path", dest = "pth_path", type = str, default = '/home/zhangpengyi/RC3D/Pretrained/i3d_r50_kinetics.pth')
     parser.add_argument("--pretrained", dest = "pretrained", type = str, default = 'False')
@@ -56,7 +57,7 @@ def train(args):
     runtime = AverageMeter()
     if args.preprocess == 'False':
         utils.preprocess(args.video_path, args.image_path, args.video_annotation_path, args.annotation_path)
-    model = RC3D_resnet.RC3D(num_classes, cfg.Train.Image_shape)
+    model = RC3D_resnet.RC3D(num_classes, cfg.Train.Image_shape, args.extract_feature)
     model = model.cuda()
     model.zero_grad()
     if args.use_resnet_pth == 'True':
