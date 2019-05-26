@@ -22,8 +22,9 @@ id_to_name = dict(enumerate(CLASSES))
 
 def arg_parse():
     parser = argparse.ArgumentParser(description = "ResNet")
-    parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionImage/')
-    parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionLabel/')
+    parser.add_argument("--feature_path", dest = 'feature_path', type = str, default = '/home/share2/zhangpengyi/data/train_feature/')
+    parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestImage/')
+    parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestLabel/')
     parser.add_argument("--checkpoint_path", dest = 'checkpoint_path', type = str, default = '/home/share2/zhangpengyi/data/ActionCheckpoint/')
     args = parser.parse_args()
     return args
@@ -42,17 +43,16 @@ def test(args):
     except Exception:
         print("There is no checkpoint in ", args.checkpoint)
         exit
-    model = RC3D_resnet.RC3D(num_classes, cfg.Test.Image_shape)
+    model = RC3D_resnet.RC3D(num_classes, cfg.Test.Image_shape, args.feature_path)
     model = model.cuda()
     model.zero_grad()
     model.load(ckpt_path)
     #test_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path, mode = 'test')
-    test_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
+    test_batch = utils.new_Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
     tic = time.time()
-    test_data, gt = next(test_batch)
-    data = torch.tensor(test_data, device = 'cuda', dtype = torch.float32)
+    data, gt = next(test_batch)
     with torch.no_grad():
-        #pdb.set_trace()
+        pdb.set_trace()
         print(gt)
         _, _, object_cls_score, object_offset = model.forward(data)
         bbox = utils.nms(model.proposal_bbox, object_cls_score, object_offset, model.num_classes, model.im_info)

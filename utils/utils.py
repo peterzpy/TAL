@@ -90,7 +90,7 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
     #proposal_bbox [N, 2]
     #object_cls_score [N, C+1]
     #object_offset [N, 2 * C]
-    pdb.set_trace()
+    #pdb.set_trace()
     object_offset = object_offset.reshape(object_offset.shape[0], -1, 2)
     cls_prob, cls_prob_idx = torch.max(nn.Softmax(dim = -1)(object_cls_score), -1)
     object_bbox = dict()
@@ -269,46 +269,6 @@ def preprocess(video_path, image_path, video_annotation_path, annotation_path):
             print("Error while processing ", os.path.join(video_path, video_name))
     f.close()
     print("Done!")
-
-
-def Batch_Generator(name_to_id, num_classes, image_path = "/home/share2/zhangpengyi/data/ActionImage/", annotation_path = "/home/share2/zhangpengyi/data/ActionLabel/", mode = 'train'):
-    image_names = os.listdir(image_path)
-    if mode == 'train':
-        while True:
-            random.shuffle(image_names)
-            for image_name in image_names:
-                image_list = os.listdir(os.path.join(image_path, image_name))
-                frame_num = len(image_list)
-                data = np.empty((1, 3, frame_num, ) + tuple(cfg.Train.Image_shape))
-                for indx, image in enumerate(image_list):
-                    im = plt.imread(os.path.join(image_path, image_name, image))
-                    data[0, :, indx, :, :] = im.reshape(3, im.shape[0], im.shape[1])
-                with open(os.path.join(annotation_path, image_name+".txt")) as f:
-                    lines = f.readlines()
-                    label = np.empty((len(lines), 3))
-                    for i, line in enumerate(lines):
-                        line = line.split(" ")
-                        label[i, 0] = int(line[0])
-                        label[i, 1] = float(line[1])
-                        label[i, 2] = float(line[2].strip())
-                yield data, label
-    else:
-        for image_name in image_names:
-            image_list = os.listdir(os.path.join(image_path, image_name))
-            frame_num = len(image_list)
-            data = np.empty((1, 3, frame_num, ) + tuple(cfg.Train.Image_shape))
-            for indx, image in enumerate(image_list):
-                im = plt.imread(os.path.join(image_path, image_name, image))
-                data[0, :, indx, :, :] = im.reshape(3, im.shape[0], im.shape[1])
-            with open(os.path.join(annotation_path, image_name+".txt")) as f:
-                lines = f.readlines()
-                label = np.empty((len(lines), 3))
-                for i, line in enumerate(lines):
-                    line = line.split(" ")
-                    label[i, 0] = int(line[0])
-                    label[i, 1] = float(line[1])
-                    label[i, 2] = float(line[2].strip())
-            yield data, label, image_name
     
 def generate_gt(annotation_path = "/home/share2/zhangpengyi/data/ActionTestLabel/", json_path = '../Annotation/', num_classes = 20):
     fp = []
@@ -336,7 +296,7 @@ def generate_gt(annotation_path = "/home/share2/zhangpengyi/data/ActionTestLabel
         json.dump(gt[i], fp[i])
         fp[i].close()
 
-def ner_preprocess(video_path, image_path, video_annotation_path, annotation_path):
+def new_preprocess(video_path, image_path, video_annotation_path, annotation_path):
     print("Begin to process the video!")
     video_names = os.listdir(video_path)
     f = open(video_annotation_path)
@@ -347,17 +307,50 @@ def ner_preprocess(video_path, image_path, video_annotation_path, annotation_pat
             annotation_action = annotation[video_name.split('.')[0]]['actions']
         except Exception:
             continue
-        cap = cv2.VideoCapture(os.path.join(video_path, video_name))
-        counter = 0
-        fw = open(os.path.join(annotation_path, video_name.split('.')[0])+".txt", 'w')
-        for i in range(len(annotation_action)):
-            fw.write("{:d} {:f} {:f}\n".format(annotation_action[i][0], annotation_action[i][1], annotation_action[i][2]))
-        fw.close()
-        while(cap.isOpened()):
-            ret, frame = cap.read()
-            if ret == False:
-                break
-            if counter % cfg.Process.new_dilation == 0:
-                frame = cv2.resize(frame, tuple(cfg.Train.Image_shape))
-                cv2.imwrite(os.path.join(temp_name, "{:05d}.jpg".format(int(counter/cfg.Process.new_dilation))), frame)
-            counter += 1
+        os.mkdir(temp_name)
+        try:
+            cap = cv2.VideoCapture(os.path.join(video_path, video_name))
+            counter = 0
+            fw = open(os.path.join(annotation_path, video_name.split('.')[0])+".txt", 'w')
+            for i in range(len(annotation_action)):
+                fw.write("{:d} {:f} {:f}\n".format(annotation_action[i][0], annotation_action[i][1], annotation_action[i][2]))
+            fw.close()
+            while(cap.isOpened()):
+                ret, frame = cap.read()
+                if ret == False:
+                    break
+                if counter % cfg.Process.new_dilation == 0:
+                    frame = cv2.resize(frame, tuple(cfg.Train.Image_shape))
+                    cv2.imwrite(os.path.join(temp_name, "{:05d}.jpg".format(int(counter/cfg.Process.new_dilation))), frame)
+                counter += 1
+            print(os.path.join(annotation_path, video_name.split('.')[0]) + " Done!")
+        except Exception:
+            print("Error while processing ", os.path.join(video_path, video_name))
+    print("Done!")
+    
+def new_Batch_Generator(name_to_id, num_classes, image_path = "/home/share2/zhangpengyi/data/ActionImage/", annotation_path = "/home/share2/zhangpengyi/data/ActionLabel/", mode = 'train'):
+    image_names = os.listdir(image_path)
+    if mode == 'train':
+        while True:
+            random.shuffle(image_names)
+            for image_name in image_names:
+                with open(os.path.join(annotation_path, image_name+".txt")) as f:
+                    lines = f.readlines()
+                    label = np.empty((len(lines), 3))
+                    for i, line in enumerate(lines):
+                        line = line.split(" ")
+                        label[i, 0] = int(line[0])
+                        label[i, 1] = float(line[1])
+                        label[i, 2] = float(line[2].strip())
+                yield image_name, label
+    else:
+        for image_name in image_names:
+            with open(os.path.join(annotation_path, image_name+".txt")) as f:
+                lines = f.readlines()
+                label = np.empty((len(lines), 3))
+                for i, line in enumerate(lines):
+                    line = line.split(" ")
+                    label[i, 0] = int(line[0])
+                    label[i, 1] = float(line[1])
+                    label[i, 2] = float(line[2].strip())
+            yield image_name, label, image_name

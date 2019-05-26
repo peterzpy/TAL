@@ -23,6 +23,7 @@ id_to_name = dict(enumerate(CLASSES))
 
 def arg_parse():
     parser = argparse.ArgumentParser(description = "ResNet")
+    parser.add_argument("--feature_path", dest = 'feature_path', type = str, default = '/home/share2/zhangpengyi/data/train_feature/')
     parser.add_argument("--preprocessed", dest = 'preprocessed', type = str, default = 'True')
     parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestImage/')
     parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestLabel/')
@@ -47,11 +48,11 @@ def generate_det(args):
     except Exception:
         print("There is no checkpoint in ", args.checkpoint)
         exit
-    model = RC3D_resnet.RC3D(num_classes, cfg.Test.Image_shape)
+    model = RC3D_resnet.RC3D(num_classes, cfg.Test.Image_shape, args.feature_path)
     model = model.cuda()
     model.zero_grad()
     model.load(ckpt_path)
-    test_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path, mode = 'test')
+    test_batch = utils.new_Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
     fp = []
     det = []
     for i in range(num_classes):
@@ -61,10 +62,9 @@ def generate_det(args):
         det[i]['object'] = []
     while True:
         with torch.no_grad():
-            test_data, gt, name = next(test_batch)
+            data, gt = next(test_batch)
             if gt.shape[0] == 0:
                 break
-            data = torch.tensor(test_data, device = 'cuda', dtype = torch.float32)
             _, _, object_cls_score, object_offset = model.forward(data)
             #bbox 是按照score降序排列的
             bbox = utils.nms(model.proposal_bbox, object_cls_score, object_offset, model.num_classes, model.im_info)
@@ -73,7 +73,7 @@ def generate_det(args):
                 if proposal[:, 0] == proposal[:, 1]:
                     continue
                 temp_dict = {}
-                temp_dict['file_name'] = name
+                temp_dict['file_name'] = data
                 temp_dict['start'] = proposal[:, 0]
                 temp_dict['end'] = proposal[:, 1]
                 temp_dict['score'] = score
@@ -156,7 +156,7 @@ if __name__ == '__main__':
     args = arg_parse()
     print(args)
     if args.preprocessed == 'False':
-        utils.preprocess(args.video_path, args.image_path, args.video_annotation_path, args.annotation_path)
+        utils.new_preprocess(args.video_path, args.image_path, args.video_annotation_path, args.annotation_path)
     utils.generate_gt(args.annotation_path)
     generate_det(args)
     eval_mAP(args)

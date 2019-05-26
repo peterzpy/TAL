@@ -20,6 +20,7 @@ id_to_name = dict(enumerate(CLASSES))
 
 def arg_parse():
     parser = argparse.ArgumentParser(description = "BasicNet")
+    parser.add_argument("--feature_path", dest = 'feature_path', type = str, default = '/home/share2/zhangpengyi/data/train_feature/')
     parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionImage/')
     parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionLabel/')
     parser.add_argument("--checkpoint_path", dest = 'checkpoint_path', type = str, default = '/home/share2/zhangpengyi/data/ActionCheckpoint/')
@@ -40,14 +41,13 @@ def test(args):
     except Exception:
         print("There is no checkpoint in ", args.checkpoint_path)
         exit
-    model = RC3D_simplified.RC3D(num_classes, cfg.Test.Image_shape)
+    model = RC3D_simplified.RC3D(num_classes, cfg.Test.Image_shape, args.feature_path)
     model = model.cuda()
     model.zero_grad()
     model.load(ckpt_path)
-    test_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
+    test_batch = utils.new_Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
     tic = time.time()
-    test_data, gt = next(test_batch)
-    data = torch.tensor(test_data, device = 'cuda', dtype = torch.float32)
+    data, gt = next(test_batch)
     with torch.no_grad():
         print(gt)
         _, _, object_cls_score, obejct_offset = model.forward(data)
@@ -58,6 +58,7 @@ def test(args):
         print('Time {runtime.val:.3f} ({runtime.avg:.3f})\t'.format(runtime=runtime))
         for _cls, score, proposal in zip(bbox['cls'], bbox['score'], bbox['bbox']):
             print("class:{:}({:})\t   score:{:.6f}\t   start:{:.2f}\t  end:{:.2f}\t".format(id_to_name[int(_cls[0])], _cls[0], score[0], proposal[0, 0], proposal[0, 1]))
+   
             
 if __name__ == "__main__":
     args = arg_parse()

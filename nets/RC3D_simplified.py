@@ -114,7 +114,7 @@ class SoiPooling(nn.Module):
 
 class RC3D(nn.Module):
 
-    def __init__(self, num_classes, image_shape):
+    def __init__(self, num_classes, image_shape, feature_path):
         super(RC3D, self).__init__()
         self.num_classes = num_classes
         self.anchor_size = [1, 2, 3, 4, 5, 6, 8, 11, 16]
@@ -265,7 +265,7 @@ class RC3D(nn.Module):
             del pretrained_dict
             del model_dict
         except Exception:
-            print("Error! There is no model in ", os.path.join(os.path(), path))
+            print("Error! There is no model in ", path)
 
     def save(self, path):
         print("Begin to load {} ...".format(path))

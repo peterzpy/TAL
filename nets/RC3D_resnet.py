@@ -53,12 +53,12 @@ class MaxPool1d(nn.Module):
 
 class SegmentProposal(nn.Module):
 
-    def __init__(self):
+    def __init__(self, anchor_size):
         super(SegmentProposal, self).__init__()
         self.relu = nn.ReLU(inplace = True)
         self.conv1 = Conv1d(256, 256, 3, 1, padding = 'SAME')
-        self.conv_cls = Conv1d(256, int(2*len(cfg.Train.anchor_size)/cfg.Train.rpn_stride), 1, 1)
-        self.conv_segment = Conv1d(256, int(2*len(cfg.Train.anchor_size)/cfg.Train.rpn_stride), 1, 1)
+        self.conv_cls = Conv1d(256, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
+        self.conv_segment = Conv1d(256, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
     
     def __call__(self, inputs):
         x = self.relu(self.conv1(inputs))
@@ -68,14 +68,11 @@ class SegmentProposal(nn.Module):
 
 class RC3D(nn.Module):
 
-    def __init__(self, num_classes, image_shape, stack_feature):
+    def __init__(self, num_classes, image_shape, stack_feature = False):
         super(RC3D, self).__init__()
         self.stack_feature = stack_feature
         self.num_classes = num_classes
-        if stack_feature:
-            self.anchor_size = cfg.Train.new_anchor_size
-        else:
-            self.anchor_size = cfg.Train.anchor_size
+        self.anchor_size = cfg.Train.new_anchor_size
         self.num_anchors = len(self.anchor_size)
         (H, W) = image_shape
         assert H % 16 == 0, "H must be times of 16"
@@ -85,9 +82,10 @@ class RC3D(nn.Module):
         self.conv1 = nn.Conv1d(1024, 256, 1)
         self.conv2 = nn.Conv1d(1024, 256, 1)
         self.fc1 = nn.Linear(256*7, 256)
+        self.avg = nn.AdaptiveMaxPool1d(1)
         self.cls = nn.Linear(256, self.num_classes)
         self.bbox_offset = nn.Linear(256, 2 * (self.num_classes - 1))
-        self.segment_proposal = SegmentProposal()
+        self.segment_proposal = SegmentProposal(self.anchor_size)
         self.backbone = resnet.I3Res50(num_classes=self.num_classes)
         self.relation = Relation()
 
@@ -105,35 +103,20 @@ class RC3D(nn.Module):
         return inputs_reshape
 
     def forward(self, inputs):
-        if self.stack_feature:
+        with torch.no_grad():
             self.im_info = inputs.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
-            for i in range(inputs.shape[2], cfg.Process.new_cluster):
-                if i == 0:
-                    feature = self.backbone(inputs[:, :, i : i + cfg.Process.new_cluster, :, :])
-                else:
-                    feature = torch.cat((feature, self.backbone(inputs[:, :, i : i + cfg.Process.new_cluster, :, :])), 1)
-        else:
-            self.im_info = cfg.Process.length
-            feature = self.backbone(inputs) #[N, L/8, 1024]
-        feature = feature.transpose(1, 2)
+            feature = h5py.File(os.path.join(self.feature_path, inputs+".h5"), 'r')['feature'][:]
         x = self.relu(self.conv1(feature))
         cls_score, proposal_offset = self.segment_proposal(x)
-        if self.stack_feature:
-            self.anchors = torch.tensor(generate_anchors(x.size()[-1], cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
-        else:
-            self.anchors = torch.tensor(generate_anchors(x.size()[-1], 8, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
+        self.anchors = torch.tensor(generate_anchors(x.size()[-1], cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
         cls_prob = self._cls_prob(cls_score).reshape(-1, 2)
         proposal_offset_reshaped = self._reshape(proposal_offset).reshape(-1, 2)
         proposal_idx, proposal_bbox = proposal_nms(self.anchors, cls_prob, proposal_offset_reshaped, self.im_info)
         proposal_offset = proposal_offset_reshaped[proposal_idx]
         #proposal_prob = cls_prob[proposal_idx]
         new_proposal = torch.empty_like(proposal_bbox, dtype = torch.int32)
-        if self.stack_feature:
-            new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
-            new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
-        else:
-            new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / 8), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
-            new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / 8), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
+        new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
+        new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
         self.proposal_bbox = proposal_bbox
         for i in range(new_proposal.size()[0]):
             #if new_proposal[i, 0] > new_proposal[i, 1]:
@@ -216,14 +199,14 @@ class RC3D(nn.Module):
             pretrained_dict = torch.load(path)
             print("Begin to load model {} ...".format(path))
             model_dict = self.state_dict()
-            pretrained_dict = {prefix + k:v for k, v in pretrained_dict.items() if prefix + k in model_dict.keys()}
+            pretrained_dict = {prefix + k.split('.', 1)[1]:v for k, v in pretrained_dict.items() if prefix + k.split('.', 1)[1] in model_dict.keys()}
             model_dict.update(pretrained_dict)
             self.load_state_dict(model_dict)
             print("Done!")
             del pretrained_dict
             del model_dict
         except Exception:
-            print("Error! There is no model in ", os.path.join(os.path(), path))
+            print("Error! There is no model in ", path)
 
     def save(self, path):
         print("Begin to load {} ...".format(path))

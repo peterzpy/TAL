@@ -140,3 +140,17 @@ class I3Res50(nn.Module):
         #elif len(inputs.shape).dim() == 7:
         #    pred = self.forward_multi(inputs)
         return feature
+    
+    def load(self, path):
+        try:
+            pretrained_dict = torch.load(path)
+            print("Begin to load model {} ...".format(path))
+            model_dict = self.state_dict()
+            pretrained_dict = {k.split('.', 1)[1]:v for k, v in pretrained_dict.items() if k.split('.', 1)[1] in model_dict.keys()}
+            model_dict.update(pretrained_dict)
+            self.load_state_dict(model_dict)
+            print("Done!")
+            del pretrained_dict
+            del model_dict
+        except Exception:
+            print("Error! There is no model in ", path)

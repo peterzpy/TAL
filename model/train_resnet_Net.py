@@ -15,6 +15,7 @@ import nets.RC3D_resnet as RC3D_resnet
 from layers.MyOptim import MyOptim
 from utils.AverageMeter import AverageMeter
 import utils.utils as utils
+from model.extract_feature import extract_feature
 
 CLASSES = ("BackGround", "BaseballPitch", "BasketballDunk", "Billiards", "CleanAndJerk", "CliffDiving", "CricketBowling", "CricketShot", "Diving", "FrisbeeCatch",
             "GolfSwing", "HammerThrow", "HighJump", "JavelinThrow", "LongJump", "PoleVault", "Shotput", "SoccerPenalty", "TennisSwing", "ThrowDiscus", "VolleyballSpiking")
@@ -24,9 +25,10 @@ id_to_name = dict(enumerate(CLASSES))
 
 def arg_parse():
     parser = argparse.ArgumentParser(description = "ResnetNet")
-    parser.add_argument("--extract_feature", dest = 'extract_feature', type = str, default = 'False')
+    parser.add_argument("--feature_preprocess", dest = 'feature_preprocess', type = str, default = 'False')
+    parser.add_argument("--feature_path", dest = 'feature_path', type = str, default = '/home/share2/zhangpengyi/data/train_feature/')
     parser.add_argument("--use_resnet_pth", dest = 'use_resnet_pth', type = str, default = 'False')
-    parser.add_argument("--pth_path", dest = "pth_path", type = str, default = '/home/zhangpengyi/RC3D/Pretrained/i3d_r50_kinetics.pth')
+    parser.add_argument("--pth_path", dest = "pth_path", type = str, default = '/home/zhangpengyi/RC3D/Pretrained/resnet-50-kinetics-ucf101_split1.pth')
     parser.add_argument("--pretrained", dest = "pretrained", type = str, default = 'False')
     parser.add_argument("--preprocess", dest = "preprocess", type = str, default = 'True')
     parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionImage/')
@@ -51,8 +53,10 @@ def train(args):
     cost4 = AverageMeter()
     runtime = AverageMeter()
     if args.preprocess == 'False':
-        utils.preprocess(args.video_path, args.image_path, args.video_annotation_path, args.annotation_path)
-    model = RC3D_resnet.RC3D(num_classes, cfg.Train.Image_shape, args.extract_feature)
+        utils.new_preprocess(args.video_path, args.image_path, args.video_annotation_path, args.annotation_path)
+    if args.feature_preprocess == 'True':
+        extract_feature(args.image_path, args.feature_path, num_classes, args.pth_path)
+    model = RC3D_resnet.RC3D(num_classes, cfg.Train.Image_shape, args.feature_path)
     model = model.cuda()
     model.zero_grad()
     if args.use_resnet_pth == 'True':
@@ -74,7 +78,7 @@ def train(args):
             ckpt_path = os.path.join(args.checkpoint_path, "ResNet.ckpt")
         if step or args.pretrained == 'True':
             model.load(ckpt_path)
-    train_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
+    train_batch = utils.new_Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
     optimizer = MyOptim(model.parameters())
     while step < args.iters:
         optimizer.zero_grad()
@@ -82,7 +86,6 @@ def train(args):
         train_data, gt_boxes = next(train_batch)
         if gt_boxes.shape[0] == 0:
             continue
-        data = torch.tensor(train_data, device = 'cuda', dtype = torch.float32)
         gt_boxes = torch.tensor(gt_boxes, device = 'cuda', dtype = torch.float32)
         cls_score, proposal_offset, object_cls_score, object_offset = model.forward(data)
         loss, loss1, loss2, loss3, loss4 = model.get_loss(cls_score, proposal_offset, object_cls_score, object_offset, gt_boxes)
