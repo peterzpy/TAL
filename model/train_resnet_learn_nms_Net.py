@@ -28,7 +28,7 @@ def arg_parse():
     parser.add_argument("--feature_preprocess", dest = 'feature_preprocess', type = str, default = 'False')
     parser.add_argument("--feature_path", dest = 'feature_path', type = str, default = '/home/share2/zhangpengyi/data/train_feature/')
     parser.add_argument("--use_resnet_pth", dest = 'use_resnet_pth', type = str, default = 'False')
-    parser.add_argument("--pth_path", dest = "pth_path", type = str, default = '/home/zhangpengyi/RC3D/Pretrained/resnet-50-kinetics-ucf101_split1.pth')
+    parser.add_argument("--pth_path", dest = "pth_path", type = str, default = '/home/zhangpengyi/RC3D/Pretrained/resnet-101-kinetics-ucf101_split1.pth')
     parser.add_argument("--pretrained", dest = "pretrained", type = str, default = 'False')
     parser.add_argument("--preprocess", dest = "preprocess", type = str, default = 'True')
     parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionImage/')
@@ -62,11 +62,11 @@ def train(args):
         utils.ner_preprocess(args.video_path, args.image_path, args.video_annotation_path, args.annotation_path)
     if args.feature_preprocess == 'True':
         extract_feature(args.image_path, args.feature_path, num_classes, args.pth_path)
-    model = RC3D_resnet.RC3D(num_classes, cfg.Train.Image_shape, args.extract_feature, args.feature_path)
+    model = RC3D_resnet.RC3D(num_classes, cfg.Train.Image_shape, args.feature_path)
     model = model.cuda()
     model.zero_grad()
     if args.use_resnet_pth == 'True':
-        model.load(args.pth_path, 0)
+        #model.load(args.pth_path, 0)
         step = 0
         ckpt_path = os.path.join(args.checkpoint_path, "ResNetNMS.ckpt")
     else:
@@ -89,7 +89,7 @@ def train(args):
     while step < args.iters:
         optimizer.zero_grad()
         tic = time.time()
-        train_data, gt_boxes = next(train_batch)
+        data, gt_boxes = next(train_batch)
         if gt_boxes.shape[0] == 0:
             continue
         gt_boxes = torch.tensor(gt_boxes, device = 'cuda', dtype = torch.float32)

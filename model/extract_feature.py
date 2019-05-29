@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 def extract_feature(image_path, feature_path, num_classes, path):
     image_names = os.listdir(image_path)
-    model = resnet.resnet50(num_classes=num_classes, shortcut_type='A', sample_size=cfg.Train.Image_shape[0], sample_duration=cfg.Process.new_cluster)
+    model = resnet.resnet101(num_classes=num_classes, shortcut_type='A', sample_size=cfg.Train.Image_shape[0], sample_duration=cfg.Process.new_cluster)
     model = model.cuda()
     model.zero_grad()
     model.load(path)
@@ -37,8 +37,6 @@ def extract_feature(image_path, feature_path, num_classes, path):
                         data[0, :, indx, :, :] = im.transpose(2, 0, 1)
                 x = model.forward(torch.tensor(data).cuda().float())
                 x = x.reshape(x.shape[:3])
-                x = x.transpose(1, 2)
-                x = nn.AdaptiveAvgPool1d(1)(x)
                 if i == 0:
                     feature = x
                 else:

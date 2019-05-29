@@ -19,7 +19,7 @@ _C.Process.length = 64
 
 _C.Train.anchor_size = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40]
 _C.Train.new_anchor_size = [1, 2, 3, 4, 5, 6, 8, 11, 16]
-_C.Train.learning_rate = 0.00005
+_C.Train.learning_rate = 0.001
 _C.Train.positive_threshold = 0.7
 _C.Train.negative_threshold = 0.3
 _C.Train.rpn_stride = 0.25
@@ -37,6 +37,8 @@ _C.Train.batch_size = 64
 _C.Train.fg_fraction = 0.25
 _C.Train.rpn_fg_fraction = 0.5
 _C.Train.fg_threshold = 0.5
+_C.Train.bg_threshold_hi = 0.5
+_C.Train.bg_threshold_lo = 0.1
 _C.Train.rpn_nms = 0.7
 _C.Train.rpn_pre_nms = 12000
 _C.Train.rpn_post_nms = 300

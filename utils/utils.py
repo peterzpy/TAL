@@ -73,12 +73,12 @@ def proposal_nms(anchors, cls_prob, proposal_offset, im_info = 64):
     new_proposal = torch.max(torch.min(new_proposal, torch.ones_like(new_proposal) * (im_info - 1)), torch.zeros_like(new_proposal))
     _, sort_index = torch.sort(cls_prob[:, 1], dim = 0, descending = True)
     if cls_prob.size()[0] > cfg.Train.rpn_pre_nms:
+        index = torch.ones((cfg.Train.rpn_pre_nms, ), dtype = torch.long).cuda()
         sort_index = sort_index[:cfg.Train.rpn_pre_nms]
-    index[cfg.Train.rpn_pre_nms:] = 0
     sorted_proposal = new_proposal[sort_index, :]
     overlaps = bbox_overlap(sorted_proposal[0:1, :], sorted_proposal)
     index[1 + torch.nonzero(overlaps[0, 1:]  >= cfg.Train.rpn_nms).reshape(-1)] = 0
-    rpn_reserve_index = torch.nonzero(index == 1).view(-1)
+    rpn_reserve_index = torch.nonzero(index == 1).reshape(-1)
     if len(rpn_reserve_index) > cfg.Train.rpn_post_nms:
         rpn_reserve_index = rpn_reserve_index[torch.argsort(overlaps[0, rpn_reserve_index], descending=True)]
         index[rpn_reserve_index[cfg.Train.rpn_post_nms:]] = 0
@@ -104,9 +104,9 @@ def nms(proposal_bbox, object_cls_score, object_offset, num_classes, im_info):
         refined_proposal = torch.empty_like(proposal_bbox[cls_prob_idx == i])
         new_proposal = torch.empty_like(proposal_bbox[cls_prob_idx == i])
         refined_proposal[:, 0] = proposal_bbox[cls_prob_idx == i, 1] * object_offset[cls_prob_idx == i, i - 1, 0] + proposal_bbox[cls_prob_idx == i, 0]
-        refined_proposal[:, 1] = proposal_bbox[cls_prob_idx == i, 1] * torch.exp(object_offset[cls_prob_idx == i, i - 1,  1])
+        refined_proposal[:, 1] = proposal_bbox[cls_prob_idx == i, 1] * torch.exp(object_offset[cls_prob_idx == i, i - 1, 1])
         new_proposal[:, 0] = refined_proposal[:, 0] - refined_proposal[:, 1]/2
-        new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 0]/2
+        new_proposal[:, 1] = refined_proposal[:, 0] + refined_proposal[:, 1]/2
         new_proposal = torch.max(torch.min(new_proposal, torch.ones_like(new_proposal) * (im_info - 1)), torch.zeros_like(new_proposal))
         prob, temp_idx = torch.sort(temp_prob, descending = True)
         new_proposal = new_proposal[temp_idx, :]

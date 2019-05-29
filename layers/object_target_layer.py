@@ -45,13 +45,17 @@ def object_target_layer(gt_boxes, im_info, proposal_bbox):
     new_proposal[:, 1] = proposal_bbox[:, 0] + proposal_bbox[:, 1] / 2
     allow_border = 0
     indx = torch.nonzero((new_proposal[:, 0] >= allow_border) & (new_proposal[:, 1] <= im_info + allow_border) & (new_proposal[:, 0] < new_proposal[:, 1])).reshape(-1)
-    label = torch.zeros(len(indx), 1).cuda()
+    label = torch.ones(len(indx), 1).cuda() * -1
     new_proposal = new_proposal[indx, :]
     overlap = bbox_overlap(new_proposal, gt_boxes[:, 1:])
+    if overlap.shape[0] == 0:
+        pdb.set_trace()
     best_index = torch.argmax(overlap, 0)
     max_overlap, argmax_overlap = torch.max(overlap, 1)
     #这里不对正负样本的比例做要求
     idx = torch.nonzero(max_overlap > cfg.Train.fg_threshold).reshape(-1)
+    new_idx = torch.nonzero((max_overlap >= cfg.Train.bg_threshold_lo) & (max_overlap <= cfg.Train.bg_threshold_hi)).reshape(-1)
+    label[new_idx, 0] = 0
     label[idx, 0] = gt_boxes[argmax_overlap[idx], 0]
     label[best_index, 0] = gt_boxes[:, 0]
     bbox_offset = compute_target(new_proposal[idx, :], gt_boxes[argmax_overlap[idx], 1:])

@@ -23,8 +23,8 @@ id_to_name = dict(enumerate(CLASSES))
 def arg_parse():
     parser = argparse.ArgumentParser(description = "ResNet")
     parser.add_argument("--feature_path", dest = 'feature_path', type = str, default = '/home/share2/zhangpengyi/data/train_feature/')
-    parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestImage/')
-    parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionTestLabel/')
+    parser.add_argument("--image_path", dest = 'image_path', type = str, default = '/home/share2/zhangpengyi/data/ActionImage/')
+    parser.add_argument("--annotation_path", dest = 'annotation_path', type = str, default = '/home/share2/zhangpengyi/data/ActionLabel/')
     parser.add_argument("--checkpoint_path", dest = 'checkpoint_path', type = str, default = '/home/share2/zhangpengyi/data/ActionCheckpoint/')
     args = parser.parse_args()
     return args
@@ -50,7 +50,7 @@ def test(args):
     #test_batch = utils.Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path, mode = 'test')
     test_batch = utils.new_Batch_Generator(name_to_id, num_classes, args.image_path, args.annotation_path)
     tic = time.time()
-    test_data, gt = next(test_batch)
+    data, gt = next(test_batch)
     with torch.no_grad():
         #pdb.set_trace()
         print(gt)

@@ -6,9 +6,9 @@ import torch.nn.functional as F
 import pdb
 import re
 import numpy as np
-import nets.resnet as resnet
 import os
 import math
+import h5py
 import time
 from utils.config import cfg
 from utils.utils import proposal_nms
@@ -68,9 +68,9 @@ class SegmentProposal(nn.Module):
 
 class RC3D(nn.Module):
 
-    def __init__(self, num_classes, image_shape, stack_feature = False):
+    def __init__(self, num_classes, image_shape, feature_path = None):
         super(RC3D, self).__init__()
-        self.stack_feature = stack_feature
+        self.feature_path = feature_path
         self.num_classes = num_classes
         self.anchor_size = cfg.Train.new_anchor_size
         self.num_anchors = len(self.anchor_size)
@@ -79,6 +79,7 @@ class RC3D(nn.Module):
         assert W % 16 == 0, "W must be times of 16"
         self.layer = [64, '_M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M', 'fc', 'fc']
         self.relu = nn.ReLU(inplace = True)
+        self.norm_conv = nn.Conv1d(2048, 1024, 1)
         self.conv1 = nn.Conv1d(1024, 256, 1)
         self.conv2 = nn.Conv1d(1024, 256, 1)
         self.fc1 = nn.Linear(256*7, 256)
@@ -86,7 +87,6 @@ class RC3D(nn.Module):
         self.cls = nn.Linear(256, self.num_classes)
         self.bbox_offset = nn.Linear(256, 2 * (self.num_classes - 1))
         self.segment_proposal = SegmentProposal(self.anchor_size)
-        self.backbone = resnet.I3Res50(num_classes=self.num_classes)
         self.relation = Relation()
 
     def _cls_prob(self, inputs):
@@ -103,9 +103,10 @@ class RC3D(nn.Module):
         return inputs_reshape
 
     def forward(self, inputs):
-        with torch.no_grad():
-            self.im_info = inputs.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
-            feature = h5py.File(os.path.join(self.feature_path, inputs+".h5"), 'r')['feature'][:]
+        feature = h5py.File(os.path.join(self.feature_path, inputs+".h5"), 'r')['feature'][:]
+        self.im_info = feature.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
+        feature = torch.tensor(feature).cuda().float()
+        feature = self.norm_conv(feature)
         x = self.relu(self.conv1(feature))
         cls_score, proposal_offset = self.segment_proposal(x)
         self.anchors = torch.tensor(generate_anchors(x.size()[-1], cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
@@ -128,7 +129,7 @@ class RC3D(nn.Module):
                 spp_feature = torch.cat((spp_feature, nn.AdaptiveMaxPool1d((7))(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1] + 1])), 0)
                 #spp_feature = torch.cat((spp_feature, self.soipooling(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1]])), 0)
         x = self.relu(self.conv2(spp_feature))
-        x = x.view(x.size()[0], -1)
+        x = x.reshape(x.size()[0], -1)
         x = self.fc1(x)
         #这里的nongt_dim 可以选取别的值
         #TODO 选择映射后的且扩大感受野的ROI区域
@@ -170,12 +171,14 @@ class RC3D(nn.Module):
         rpn_bbox_offset = rpn_bbox_offset[e_index1]
         loss2 = nn.SmoothL1Loss(reduction = 'mean')(proposal_offset, rpn_bbox_offset)
         #object_cls_loss
-        cls_object_weight = torch.empty(self.num_classes).float()
+        '''cls_object_weight = torch.empty(self.num_classes).float()
         positive_num = (object_label > 0).sum()
         negative_num = (object_label == 0).sum()
         cls_object_weight[0] = (positive_num + negative_num)/negative_num
         cls_object_weight[1:] = (positive_num + negative_num)/positive_num
         creterion = nn.CrossEntropyLoss(weight = cls_object_weight.cuda())
+        ''' 
+        creterion = nn.CrossEntropyLoss()
         loss3 = creterion(object_cls_score[e_index2], object_label[e_index2].long())
         #object_bbox_loss
         object_offset = object_offset.reshape(-1, 2)
@@ -195,11 +198,13 @@ class RC3D(nn.Module):
         prefix = ''
         if ltype == 0:
             prefix = 'backbone.'
-        try:
+            pretrained_dict = torch.load(path)['state_dict']
+        else:
             pretrained_dict = torch.load(path)
+        try:
             print("Begin to load model {} ...".format(path))
             model_dict = self.state_dict()
-            pretrained_dict = {prefix + k.split('.', 1)[1]:v for k, v in pretrained_dict.items() if prefix + k.split('.', 1)[1] in model_dict.keys()}
+            pretrained_dict = {prefix + k:v for k, v in pretrained_dict.items() if prefix + k in model_dict.keys()}
             model_dict.update(pretrained_dict)
             self.load_state_dict(model_dict)
             print("Done!")
