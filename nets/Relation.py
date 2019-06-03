@@ -118,8 +118,8 @@ def extract_rank_embedding(rank_dim, feat_dim = 256, wave_length = 1000):
     return embedding
 
 class Relation(nn.Module):
-    
-    def __init__(self, feat_dim = 256, fc_dim = 16, group = 16, dim = (1024, 1024, 256)):
+    # TODO 修改为了512
+    def __init__(self, feat_dim = 512, fc_dim = 16, group = 16, dim = (1024, 1024, 512)):
         '''
         和论文中的实现好像不太一样
         @params

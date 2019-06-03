@@ -31,6 +31,7 @@ class Conv1d(nn.Module):
             self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, stride, dilation = dilation)
         else:
             self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding = padding, dilation = dilation)
+        nn.init.xavier_normal_(self.conv.weight)
     def __call__(self, inputs):
         return self.conv(inputs)
 
@@ -56,9 +57,9 @@ class SegmentProposal(nn.Module):
     def __init__(self, anchor_size):
         super(SegmentProposal, self).__init__()
         self.relu = nn.ReLU(inplace = True)
-        self.conv1 = Conv1d(256, 256, 3, 1, padding = 'SAME')
-        self.conv_cls = Conv1d(256, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
-        self.conv_segment = Conv1d(256, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
+        self.conv1 = Conv1d(512, 512, 3, 1, padding = 'SAME')
+        self.conv_cls = Conv1d(512, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
+        self.conv_segment = Conv1d(512, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
     
     def __call__(self, inputs):
         x = self.relu(self.conv1(inputs))
@@ -79,15 +80,18 @@ class RC3D(nn.Module):
         assert W % 16 == 0, "W must be times of 16"
         self.layer = [64, '_M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M', 'fc', 'fc']
         self.relu = nn.ReLU(inplace = True)
-        self.norm_conv = nn.Conv1d(2048, 1024, 1)
-        self.conv1 = nn.Conv1d(1024, 256, 1)
-        self.conv2 = nn.Conv1d(1024, 256, 1)
-        self.fc1 = nn.Linear(256*7, 256)
+        #self.norm_conv = nn.Conv1d(2048, 1024, 1)
+        self.conv1 = nn.Conv1d(2048, 512, 1)
+        self.conv2 = nn.Conv1d(2048, 512, 1)
+        self.fc1 = nn.Linear(512*7, 512)
         self.avg = nn.AdaptiveMaxPool1d(1)
-        self.cls = nn.Linear(256, self.num_classes)
-        self.bbox_offset = nn.Linear(256, 2 * (self.num_classes - 1))
+        self.cls = nn.Linear(512, self.num_classes)
+        self.bbox_offset = nn.Linear(512, 2 * (self.num_classes - 1))
         self.segment_proposal = SegmentProposal(self.anchor_size)
         self.relation = Relation()
+        #nn.init.xavier_normal_(self.norm_conv.weight)
+        nn.init.xavier_normal_(self.conv1.weight)
+        nn.init.xavier_normal_(self.conv2.weight)
 
     def _cls_prob(self, inputs):
         inputs_reshaped = self._reshape(inputs)
@@ -106,7 +110,7 @@ class RC3D(nn.Module):
         feature = h5py.File(os.path.join(self.feature_path, inputs+".h5"), 'r')['feature'][:]
         self.im_info = feature.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
         feature = torch.tensor(feature).cuda().float()
-        feature = self.norm_conv(feature)
+        #feature = self.norm_conv(feature)
         x = self.relu(self.conv1(feature))
         cls_score, proposal_offset = self.segment_proposal(x)
         self.anchors = torch.tensor(generate_anchors(x.size()[-1], cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
@@ -137,7 +141,8 @@ class RC3D(nn.Module):
         position_matrix = extract_position_matrix(new_proposal, nongt_dim)
         position_embedding = extract_position_embedding(position_matrix, cfg.Train.embedding_feat_dim)
         attention = self.relation.forward(x, position_embedding, nongt_dim)
-        x = self.relu(x + attention)
+        #x = self.relu(x + attention)
+        x = self.relu(x)
         object_cls_score = self.cls(x)
         object_offset = self.bbox_offset(x)
         object_offset = object_offset.reshape(-1, self.num_classes - 1, 2)

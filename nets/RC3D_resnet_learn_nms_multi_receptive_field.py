@@ -32,6 +32,7 @@ class Conv1d(nn.Module):
             self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, stride, dilation = dilation)
         else:
             self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, stride, padding = padding, dilation = dilation)
+        nn.init.xavier_normal_(self.conv.weight)
     def __call__(self, inputs):
         return self.conv(inputs)
 
@@ -58,10 +59,10 @@ class SegmentProposal(nn.Module):
         super(SegmentProposal, self).__init__()
         self.relu = nn.ReLU(inplace = True)
         self.max_pool = MaxPool1d(math.ceil(anchor_size/6), 1, padding = 'SAME')
-        self.conv1 = Conv1d(256, 256, 3, 1, dilation = math.ceil(anchor_size/6), padding = 'SAME')
-        self.conv2 = Conv1d(256, 256, 3, 1, dilation = math.ceil(anchor_size/3), padding = 'SAME')
-        self.conv_cls = Conv1d(256, int(2/cfg.Train.rpn_stride), 1, 1)
-        self.conv_segment = Conv1d(256, int(2/cfg.Train.rpn_stride), 1, 1)
+        self.conv1 = Conv1d(512, 512, 3, 1, dilation = math.ceil(anchor_size/6), padding = 'SAME')
+        self.conv2 = Conv1d(512, 512, 3, 1, dilation = math.ceil(anchor_size/3), padding = 'SAME')
+        self.conv_cls = Conv1d(512, int(2/cfg.Train.rpn_stride), 1, 1)
+        self.conv_segment = Conv1d(512, int(2/cfg.Train.rpn_stride), 1, 1)
     
     def __call__(self, inputs):
         x = self.max_pool(inputs)
@@ -84,21 +85,23 @@ class RC3D(nn.Module):
         assert W % 16 == 0, "W must be times of 16"
         self.layer = [64, '_M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M', 'fc', 'fc']
         self.relu = nn.ReLU(inplace = True)
-        self.norm_conv = nn.Conv1d(2048, 1024, 1)
-        self.conv1 = nn.Conv1d(1024, 256, 1)
-        self.conv2 = nn.Conv1d(1024, 256, 1)
-        self.fc1 = nn.Linear(256*7, 256)
-        self.cls = nn.Linear(256, self.num_classes)
-        self.bbox_offset = nn.Linear(256, 2 * (self.num_classes - 1))
+        #self.norm_conv = nn.Conv1d(2048, 1024, 1)
+        self.conv1 = nn.Conv1d(2048, 512, 1)
+        self.conv2 = nn.Conv1d(2048, 512, 1)
+        self.fc1 = nn.Linear(512*7, 512)
+        self.cls = nn.Linear(512, self.num_classes)
+        self.bbox_offset = nn.Linear(512, 2 * (self.num_classes - 1))
         self.segment_proposal = []
-        for anchor_size in range(self.anchor_size):
-            self.segment_proposal.append(SegmentProposal(anchor_size))
+        for anchor_size in self.anchor_size:
+            self.segment_proposal.append(SegmentProposal(anchor_size).cuda())
         self.avg = nn.AdaptiveMaxPool1d(1)
-        self.fc1_nms = nn.Linear(256, 128)
-        self.fc2_nms = nn.Linear(256, 128)
+        self.fc1_nms = nn.Linear(512, 128)
+        self.fc2_nms = nn.Linear(512, 128)
         self.fc3_nms = nn.Linear(128, len(cfg.Network.nms_threshold))
         self.relation = Relation()
         self.nms_relation = NMSRelation()
+        nn.init.xavier_normal_(self.conv1.weight)
+        nn.init.xavier_normal_(self.conv2.weight)
 
     def _cls_prob(self, inputs):
         inputs_reshaped = self._reshape(inputs)
@@ -117,7 +120,7 @@ class RC3D(nn.Module):
         feature = h5py.File(os.path.join(self.feature_path, inputs+".h5"), 'r')['feature'][:]
         self.im_info = feature.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
         feature = torch.tensor(feature).cuda().float()
-        feature = self.norm_conv(feature)
+        #feature = self.norm_conv(feature)
         x = self.relu(self.conv1(feature))
         cls_score_list = []
         proposal_offset_list = []
@@ -135,9 +138,9 @@ class RC3D(nn.Module):
             proposal_offset_list.append(_proposal_offset)
             proposal_offset_reshaped_list.append(_proposal_offset_reshaped)
         cls_score = torch.cat(cls_score_list, 1)
-        cls_prob = torch.cat(cls_prob_list, 2)
+        cls_prob = torch.cat(cls_prob_list, 0)
         proposal_offset = torch.cat(proposal_offset_list, 1)
-        proposal_offset_reshaped = torch.cat(proposal_offset_reshaped_list, 2)
+        proposal_offset_reshaped = torch.cat(proposal_offset_reshaped_list, 0)
         self.anchors = torch.tensor(generate_anchors(x.size()[-1], cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
         proposal_idx, proposal_bbox = proposal_nms(self.anchors, cls_prob, proposal_offset_reshaped, self.im_info)
         proposal_offset = proposal_offset_reshaped[proposal_idx]
@@ -203,7 +206,7 @@ class RC3D(nn.Module):
         temp_idx = subscript_index(cls_mask, perm_idx).reshape(-1, 1)
         #[N, num_fg, 2]
         sorted_bbox = subscript_index(sorted_bbox, torch.cat((perm_idx, temp_idx), -1)).reshape(cls_mask.shape)
-        nms_rank_embedding = extract_rank_embedding(cls_score.shape[0], 256)
+        nms_rank_embedding = extract_rank_embedding(cls_score.shape[0], 512)
         nms_rank_feat = self.fc1_nms(nms_rank_embedding)
         #[num_fg, N, N, 2]
         nms_position_matrix = extract_multi_position_matrix(sorted_bbox)
