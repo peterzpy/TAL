@@ -58,11 +58,17 @@ class SegmentProposal(nn.Module):
         super(SegmentProposal, self).__init__()
         self.relu = nn.ReLU(inplace = True)
         self.conv1 = Conv1d(512, 512, 3, 1, padding = 'SAME')
+        self.conv2 = Conv1d(512, 512, 3, 1, padding = 'SAME')
+        self.conv3 = Conv1d(512, 512, 3, 1, padding = 'SAME')
+        self.conv4 = Conv1d(512, 512, 3, 1, padding = 'SAME')
         self.conv_cls = Conv1d(512, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
         self.conv_segment = Conv1d(512, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
     
     def __call__(self, inputs):
-        x = self.relu(self.conv1(inputs))
+        x = self.conv1(inputs)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.relu(self.conv4(x))
         cls_score = self.conv_cls(x)
         segment_pred = self.conv_segment(x)
         return cls_score, segment_pred
@@ -81,17 +87,33 @@ class RC3D(nn.Module):
         self.layer = [64, '_M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M', 'fc', 'fc']
         self.relu = nn.ReLU(inplace = True)
         #self.norm_conv = nn.Conv1d(2048, 1024, 1)
+        self.conv1_feat = nn.Conv1d(2048, 2048, 3, 1, padding=1)
+        self.conv2_feat = nn.Conv1d(2048, 2048, 3, 1, padding=1)
+        self.conv3_feat = nn.Conv1d(2048, 2048, 3, 1, padding=1)
         self.conv1 = nn.Conv1d(2048, 512, 1)
         self.conv2 = nn.Conv1d(2048, 512, 1)
         self.fc1 = nn.Linear(512*7, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 128)
         self.avg = nn.AdaptiveMaxPool1d(1)
-        self.cls = nn.Linear(512, self.num_classes)
-        self.bbox_offset = nn.Linear(512, 2 * (self.num_classes - 1))
+        self.cls = nn.Linear(128, self.num_classes)
+        self.conv3 = nn.Conv1d(512, 512, 3, 1, padding=1)
+        self.conv4 = nn.Conv1d(512, 512, 3, 1, padding=1)
+        self.conv5 = nn.Conv1d(512, 512, 3, 1, padding=1)
+        self.conv6 = nn.Conv1d(512, 512, 3, 1, padding=1)
+        self.bbox_offset = nn.Linear(128, 2 * (self.num_classes - 1))
         self.segment_proposal = SegmentProposal(self.anchor_size)
         self.relation = Relation()
         #nn.init.xavier_normal_(self.norm_conv.weight)
-        nn.init.xavier_normal_(self.conv1.weight)
+        nn.init.xavier_uniform_(self.conv1_feat.weight)
+        nn.init.xavier_uniform_(self.conv2_feat.weight)
+        nn.init.xavier_uniform_(self.conv3_feat.weight)
+        nn.init.normal_(self.conv1.weight, 0, 0.01)
         nn.init.xavier_normal_(self.conv2.weight)
+        nn.init.xavier_normal_(self.conv3.weight)
+        nn.init.xavier_normal_(self.conv4.weight)
+        nn.init.xavier_normal_(self.conv5.weight)
+        nn.init.xavier_normal_(self.conv6.weight)
 
     def _cls_prob(self, inputs):
         inputs_reshaped = self._reshape(inputs)
@@ -107,11 +129,14 @@ class RC3D(nn.Module):
         return inputs_reshape
 
     def forward(self, inputs):
+        #pdb.set_trace()
         feature = h5py.File(os.path.join(self.feature_path, inputs+".h5"), 'r')['feature'][:]
         self.im_info = feature.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
         feature = torch.tensor(feature).cuda().float()
+        feature = self.conv1_feat(feature)
+        feature = self.conv2_feat(feature)
         #feature = self.norm_conv(feature)
-        x = self.relu(self.conv1(feature))
+        x = self.conv1(feature)
         cls_score, proposal_offset = self.segment_proposal(x)
         self.anchors = torch.tensor(generate_anchors(x.size()[-1], cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame, cfg.Train.rpn_stride, self.anchor_size), dtype = torch.float32, device='cuda')
         cls_prob = self._cls_prob(cls_score).reshape(-1, 2)
@@ -123,6 +148,8 @@ class RC3D(nn.Module):
         new_proposal[:, 0] = torch.min(torch.max(torch.floor((proposal_bbox[:, 0] - proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.zeros_like(proposal_bbox[:, 0])), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)).long()
         new_proposal[:, 1] = torch.max(torch.min(torch.ceil((proposal_bbox[:, 0] + proposal_bbox[:, 1]) / (cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame)), torch.ones_like(proposal_bbox[:, 1]) * (feature.size()[-1] - 1)), torch.zeros_like(proposal_bbox[:, 0])).long()
         self.proposal_bbox = proposal_bbox
+        if self.proposal_bbox.shape[0] == 0:
+            pdb.set_trace()
         for i in range(new_proposal.size()[0]):
             #if new_proposal[i, 0] > new_proposal[i, 1]:
                 #pdb.set_trace()
@@ -132,7 +159,11 @@ class RC3D(nn.Module):
             else:
                 spp_feature = torch.cat((spp_feature, nn.AdaptiveMaxPool1d((7))(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1] + 1])), 0)
                 #spp_feature = torch.cat((spp_feature, self.soipooling(feature[:, :, new_proposal[i, 0] : new_proposal[i, 1]])), 0)
-        x = self.relu(self.conv2(spp_feature))
+        x = self.conv2(spp_feature)
+        x = self.conv3(x)
+        x = self.relu(self.conv4(x))
+        x = self.conv5(x)
+        x = self.relu(self.conv6(x))
         x = x.reshape(x.size()[0], -1)
         x = self.fc1(x)
         #这里的nongt_dim 可以选取别的值
@@ -143,6 +174,8 @@ class RC3D(nn.Module):
         attention = self.relation.forward(x, position_embedding, nongt_dim)
         #x = self.relu(x + attention)
         x = self.relu(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
         object_cls_score = self.cls(x)
         object_offset = self.bbox_offset(x)
         object_offset = object_offset.reshape(-1, self.num_classes - 1, 2)
@@ -189,6 +222,7 @@ class RC3D(nn.Module):
         object_offset = object_offset.reshape(-1, 2)
         e_index4 = e_index3 * (self.num_classes - 1) + object_label[e_index3].long() - 1
         loss4 = nn.SmoothL1Loss(reduction = 'mean')(object_offset[e_index4], object_bbox_offset[e_index3])
+        #print(e_index.shape[0], e_index2.shape[0])
         if math.isnan(loss2.data) or math.isnan(loss4.data):
             print(loss1.data, loss2.data, loss3.data, loss4.data)
             pdb.set_trace()
