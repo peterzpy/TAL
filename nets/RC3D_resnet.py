@@ -225,9 +225,9 @@ class RC3D(nn.Module):
         creterion = nn.CrossEntropyLoss(weight = cls_object_weight.cuda())
         '''
         object_cls_prob = nn.Softmax(-1)(object_cls_score[e_index2])
+        loss3 = 0
         for i in range(self.num_classes):
-            loss3 += - torch.mul(torch.mul(object_label[e_index2] == i, torch.log(object_cls_prob[:, i])), torch.pow(1 - object_cls_prob[:, i], cfg.Train.cls_gamma)).reshape(-1).mean()
-        #object_bbox_loss
+            loss3 += - torch.mul(torch.mul((object_label[e_index2] == i).float(), torch.log(object_cls_prob[:, i])), torch.pow(1 - object_cls_prob[:, i], cfg.Train.cls_gamma)).reshape(-1).mean()#object_bbox_loss
         object_offset = object_offset.reshape(-1, 2)
         e_index4 = e_index3 * (self.num_classes - 1) + object_label[e_index3].long() - 1
         loss4 = nn.SmoothL1Loss(reduction = 'mean')(object_offset[e_index4], object_bbox_offset[e_index3])
