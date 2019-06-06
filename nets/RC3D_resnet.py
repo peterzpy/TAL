@@ -61,6 +61,7 @@ class SegmentProposal(nn.Module):
         self.conv2 = Conv1d(512, 512, 3, 1, padding = 'SAME')
         self.conv3 = Conv1d(512, 512, 3, 1, padding = 'SAME')
         self.conv4 = Conv1d(512, 512, 3, 1, padding = 'SAME')
+        self.conv5 = Conv1d(512, 512, 3, 1, padding = 'SAME')
         self.conv_cls = Conv1d(512, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
         self.conv_segment = Conv1d(512, int(2*len(anchor_size)/cfg.Train.rpn_stride), 1, 1)
     
@@ -68,7 +69,8 @@ class SegmentProposal(nn.Module):
         x = self.conv1(inputs)
         x = self.conv2(x)
         x = self.conv3(x)
-        x = self.relu(self.conv4(x))
+        x = self.conv4(x)
+        x = self.relu(self.conv5(x))
         cls_score = self.conv_cls(x)
         segment_pred = self.conv_segment(x)
         return cls_score, segment_pred
@@ -95,13 +97,14 @@ class RC3D(nn.Module):
         self.fc1 = nn.Linear(512*7, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 128)
+        self.fc4 = nn.Linear(128, 64)
         self.avg = nn.AdaptiveMaxPool1d(1)
-        self.cls = nn.Linear(128, self.num_classes)
+        self.cls = nn.Linear(64, self.num_classes)
         self.conv3 = nn.Conv1d(512, 512, 3, 1, padding=1)
         self.conv4 = nn.Conv1d(512, 512, 3, 1, padding=1)
         self.conv5 = nn.Conv1d(512, 512, 3, 1, padding=1)
         self.conv6 = nn.Conv1d(512, 512, 3, 1, padding=1)
-        self.bbox_offset = nn.Linear(128, 2 * (self.num_classes - 1))
+        self.bbox_offset = nn.Linear(64, 2 * (self.num_classes - 1))
         self.segment_proposal = SegmentProposal(self.anchor_size)
         self.relation = Relation()
         #nn.init.xavier_normal_(self.norm_conv.weight)
@@ -135,6 +138,7 @@ class RC3D(nn.Module):
         feature = torch.tensor(feature).cuda().float()
         feature = self.conv1_feat(feature)
         feature = self.conv2_feat(feature)
+        feature = self.conv3_feat(feature)
         #feature = self.norm_conv(feature)
         x = self.conv1(feature)
         cls_score, proposal_offset = self.segment_proposal(x)
@@ -174,8 +178,9 @@ class RC3D(nn.Module):
         attention = self.relation.forward(x, position_embedding, nongt_dim)
         #x = self.relu(x + attention)
         x = self.relu(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.relu(self.fc4(x))
         object_cls_score = self.cls(x)
         object_offset = self.bbox_offset(x)
         object_offset = object_offset.reshape(-1, self.num_classes - 1, 2)
@@ -199,11 +204,14 @@ class RC3D(nn.Module):
         e_index3 = torch.nonzero(object_label > 0).reshape(-1)
         cls_score = cls_score[e_index]
         rpn_label = rpn_label[e_index]
-        positive_num = (rpn_label == 1).sum()
-        negative_num = (rpn_label == 0).sum()
-        cls_rpn_weight = torch.tensor([(positive_num + negative_num)/negative_num, (positive_num + negative_num)/positive_num]).float()
-        creterion = nn.CrossEntropyLoss(weight = cls_rpn_weight.cuda())
-        loss1 = creterion(cls_score, rpn_label.long())
+        #positive_num = (rpn_label == 1).sum()
+        #negative_num = (rpn_label == 0).sum()
+        #cls_rpn_weight = torch.tensor([(positive_num + negative_num)/negative_num, (positive_num + negative_num)/positive_num]).float()
+        #creterion = nn.CrossEntropyLoss(weight = cls_rpn_weight.cuda())
+        cls_prob = nn.Softmax(-1)(cls_score)
+        positive_loss = - torch.mul(torch.mul(torch.log(cls_prob[:, 1]), rpn_label), torch.pow(cls_prob[:, 0], cfg.Train.cls_gamma))
+        negative_loss = - torch.mul(torch.mul(torch.log(cls_prob[:, 0]), 1 - rpn_label), torch.pow(cls_prob[:, 1], cfg.Train.cls_gamma))
+        loss1 = (positive_loss + negative_loss).reshape(-1).mean()
         #rpn_bbox_loss
         proposal_offset = proposal_offset[e_index1]
         rpn_bbox_offset = rpn_bbox_offset[e_index1]
@@ -215,9 +223,10 @@ class RC3D(nn.Module):
         cls_object_weight[0] = (positive_num + negative_num)/negative_num
         cls_object_weight[1:] = (positive_num + negative_num)/positive_num
         creterion = nn.CrossEntropyLoss(weight = cls_object_weight.cuda())
-        ''' 
-        creterion = nn.CrossEntropyLoss()
-        loss3 = creterion(object_cls_score[e_index2], object_label[e_index2].long())
+        '''
+        object_cls_prob = nn.Softmax(-1)(object_cls_score[e_index2])
+        for i in range(self.num_classes):
+            loss3 += - torch.mul(torch.mul(object_label[e_index2] == i, torch.log(object_cls_prob[:, i])), torch.pow(1 - object_cls_prob[:, i], cfg.Train.cls_gamma)).reshape(-1).mean()
         #object_bbox_loss
         object_offset = object_offset.reshape(-1, 2)
         e_index4 = e_index3 * (self.num_classes - 1) + object_label[e_index3].long() - 1
