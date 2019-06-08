@@ -203,7 +203,6 @@ class RC3D(nn.Module):
         return cls_score, proposal_offset, object_cls_score, object_offset, nms_score
 
     def get_loss(self, cls_score, proposal_offset, object_cls_score, object_offset, nms_score, gt_boxes, focal_loss = False):#gt_boxes [N, 3] (idx, start, end) idx中类别也是从1开始
-        #TODO 检查一遍，再加一个分阶段训练
         #pdb.set_trace()
         rpn_label, rpn_bbox_offset = anchor_target_layer(gt_boxes[:, 1:], self.im_info, self.anchors_new)
         object_label, object_bbox_offset = object_target_layer(gt_boxes, self.im_info, self.proposal_bbox)
