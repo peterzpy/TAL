@@ -8,6 +8,7 @@ Faster rcnn architecture for Action Location
 1. git clone git@github.com:peterzpy/TAL.git
 2. cd TAL
 3. mkdir Pretrained
+4. cd utils && python3 setyp.py nms/setup.py build_ext --inplace
 ```
 
 > If you want to use pretrained resnet model [Resnet3D](https://github.com/kenshohara/3D-ResNets-PyTorch>)
