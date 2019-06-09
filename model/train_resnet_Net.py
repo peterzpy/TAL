@@ -87,7 +87,7 @@ def train(args):
         if gt_boxes.shape[0] == 0:
             continue
         gt_boxes = torch.tensor(gt_boxes, device = 'cuda', dtype = torch.float32)
-        cls_score, proposal_offset, object_cls_score, object_offset = model.forward(data)
+        cls_score, proposal_offset, object_cls_score, object_offset = model.forward(data, mode='train')
         loss, loss1, loss2, loss3, loss4 = model.get_loss(cls_score, proposal_offset, object_cls_score, object_offset, gt_boxes)
         cost.update(loss)
         cost1.update(loss1)

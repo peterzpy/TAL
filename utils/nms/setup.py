@@ -94,7 +94,7 @@ class custom_build_ext(build_ext):
         build_ext.build_extensions(self)
 
 setup(
-    ext_modules= [Extension('utils.gpu_nms',
+    ext_modules= [Extension('gpu_nms',
         ['nms/nms.cu', 'nms/gpu_nms.pyx'],
         library_dirs=[CUDA['lib64']],
         libraries=['cudart'],

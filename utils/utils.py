@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from utils.config import cfg
+from utils.gpu_nms import gpu_nms
 import matplotlib.pyplot as plt
 import json
 import random
@@ -76,8 +77,9 @@ def proposal_nms(anchors, cls_prob, proposal_offset, im_info = 64):
         index = torch.ones((cfg.Train.rpn_pre_nms, ), dtype = torch.long).cuda()
         sort_index = sort_index[:cfg.Train.rpn_pre_nms]
     sorted_proposal = new_proposal[sort_index, :]
-    overlaps = bbox_overlap(sorted_proposal[0:1, :], sorted_proposal)
-    index[1 + torch.nonzero(overlaps[0, 1:]  >= cfg.Train.rpn_nms).reshape(-1)] = 0
+    overlaps = bbox_overlap(sorted_proposal, sorted_proposal)
+    for i in range(sorted_proposal.shape[0]):
+        index[i + 1 + torch.nonzero(overlaps[i, i+1:] >= cfg.Train.rpn_nms).reshape(-1)] = 0
     rpn_reserve_index = torch.nonzero(index == 1).reshape(-1)
     if len(rpn_reserve_index) > cfg.Train.rpn_post_nms:
         rpn_reserve_index = rpn_reserve_index[torch.argsort(overlaps[0, rpn_reserve_index], descending=True)]

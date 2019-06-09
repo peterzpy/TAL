@@ -97,14 +97,14 @@ class RC3D(nn.Module):
         self.fc1 = nn.Linear(512*7, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 128)
-        self.fc4 = nn.Linear(128, 64)
+        self.dropout = nn.Dropout(0.5)
         self.avg = nn.AdaptiveMaxPool1d(1)
-        self.cls = nn.Linear(64, self.num_classes)
+        self.cls = nn.Linear(128, self.num_classes)
         self.conv3 = nn.Conv1d(512, 512, 3, 1, padding=1)
         self.conv4 = nn.Conv1d(512, 512, 3, 1, padding=1)
         self.conv5 = nn.Conv1d(512, 512, 3, 1, padding=1)
         self.conv6 = nn.Conv1d(512, 512, 3, 1, padding=1)
-        self.bbox_offset = nn.Linear(64, 2 * (self.num_classes - 1))
+        self.bbox_offset = nn.Linear(128, 2 * (self.num_classes - 1))
         self.segment_proposal = SegmentProposal(self.anchor_size)
         self.relation = Relation()
         #nn.init.xavier_normal_(self.norm_conv.weight)
@@ -131,7 +131,7 @@ class RC3D(nn.Module):
 
         return inputs_reshape
 
-    def forward(self, inputs):
+    def forward(self, inputs, mode='test'):
         #pdb.set_trace()
         feature = h5py.File(os.path.join(self.feature_path, inputs+".h5"), 'r')['feature'][:]
         self.im_info = feature.shape[2] * cfg.Process.new_dilation * cfg.Process.new_cluster / cfg.Process.Frame
@@ -179,8 +179,9 @@ class RC3D(nn.Module):
         #x = self.relu(x + attention)
         x = self.relu(x)
         x = self.relu(self.fc2(x))
+        if mode == 'train':
+            x = self.dropout(x)
         x = self.relu(self.fc3(x))
-        x = self.relu(self.fc4(x))
         object_cls_score = self.cls(x)
         object_offset = self.bbox_offset(x)
         object_offset = object_offset.reshape(-1, self.num_classes - 1, 2)
